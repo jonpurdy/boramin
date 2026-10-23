@@ -116,12 +116,36 @@ static int vp9_level(const MediaInfo *info) {
     return 0;
 }
 
+static uint32_t native_video_type(const AVCodecParameters *p) {
+    switch(p->codec_id) {
+        case AV_CODEC_ID_VP9: return MKBETAG('v','p','0','9');
+        case AV_CODEC_ID_H264: return MKBETAG('a','v','c','1');
+        case AV_CODEC_ID_HEVC: return MKBETAG('h','v','c','1');
+        case AV_CODEC_ID_AV1: return MKBETAG('a','v','0','1');
+        case AV_CODEC_ID_VP8: return MKBETAG('v','p','0','8');
+        case AV_CODEC_ID_MPEG4: return MKBETAG('m','p','4','v');
+        case AV_CODEC_ID_MPEG2VIDEO: return MKBETAG('m','p','2','v');
+        case AV_CODEC_ID_MJPEG: return MKBETAG('j','p','e','g');
+        case AV_CODEC_ID_PRORES: {
+            static const uint32_t types[]={MKBETAG('a','p','c','o'),MKBETAG('a','p','c','s'),MKBETAG('a','p','c','n'),MKBETAG('a','p','c','h'),MKBETAG('a','p','4','h'),MKBETAG('a','p','4','x')};
+            return p->profile>=0 && p->profile<6?types[p->profile]:0;
+        }
+        default: {
+            // Reuse the standard QuickTime codec tags for other native formats.
+            // CoreMedia/VideoToolbox still validate support on the actual device.
+            const struct AVCodecTag *tags[]={avformat_get_mov_video_tags(),NULL};
+            uint32_t tag=av_codec_get_tag(tags,p->codec_id);
+            return ((tag&255)<<24)|((tag&65280)<<8)|((tag>>8)&65280)|(tag>>24);
+        }
+    }
+}
+
 static MediaReader *open_reader(const char *path,const MediaIO *source,MediaInfo *info,char *error,size_t n) {
     MediaReader *r=calloc(1,sizeof(*r)); int status;
     if(!r) { fail(AVERROR(ENOMEM),error,n); return NULL; }
     if((status=input_open(path,source,&r->format,&r->io))<0) goto bad;
     // Stream probing must not use a software video decoder, including in Mac control tests.
-    r->format->codec_whitelist=av_strdup("opus,vorbis,aac,ac3,eac3,flac,mp3,pcm_s16le,pcm_s24le,pcm_s32le,alac,dca");
+    r->format->codec_whitelist=av_strdup("opus,vorbis,aac,ac3,eac3,flac,mp3,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,alac,dca");
     if(!r->format->codec_whitelist) { status=AVERROR(ENOMEM); goto bad; }
     if((status=avformat_find_stream_info(r->format,NULL))<0) goto bad;
     r->video=av_find_best_stream(r->format,AVMEDIA_TYPE_VIDEO,-1,-1,NULL,0);
@@ -129,6 +153,7 @@ static MediaReader *open_reader(const char *path,const MediaIO *source,MediaInfo
     AVStream *s=r->format->streams[r->video]; AVCodecParameters *p=s->codecpar;
     memset(info,0,sizeof(*info));
     info->vp9=p->codec_id==AV_CODEC_ID_VP9; info->width=p->width; info->height=p->height;
+    info->codec_type=native_video_type(p);
     const AVPixFmtDescriptor *pix=av_pix_fmt_desc_get(p->format);
     info->bit_depth=pix?pix->comp[0].depth:0; info->profile=p->profile;
     info->chroma=p->chroma_location==AVCHROMA_LOC_LEFT?0:1;
@@ -176,6 +201,16 @@ bad: fail(status,error,n); media_close(r); return NULL;
 MediaReader *media_open(const char *path,MediaInfo *info,char *error,size_t n) { return open_reader(path,NULL,info,error,n); }
 MediaReader *media_open_io(MediaIO io,MediaInfo *info,char *error,size_t n) { return open_reader(NULL,&io,info,error,n); }
 void media_close(MediaReader *r) { if(!r)return; av_packet_free(&r->packet); avformat_close_input(&r->format); input_close(&r->io); free(r); }
+int media_video_configuration(MediaReader *r,const uint8_t **bytes) {
+    if(!r || !bytes) return AVERROR(EINVAL);
+    AVCodecParameters *p=r->format->streams[r->video]->codecpar;
+    if(p->extradata_size<0 || p->extradata_size>8*1024*1024) return AVERROR_INVALIDDATA;
+    *bytes=p->extradata; return p->extradata_size;
+}
+double media_packet_dts(MediaReader *r) {
+    if(!r || r->packet->dts==AV_NOPTS_VALUE) return NAN;
+    return r->packet->dts*av_q2d(r->format->streams[r->video]->time_base)-r->origin;
+}
 int media_seek(MediaReader *r,double seconds) {
     if(r->io && input_cancelled(r->io))return AVERROR_EXIT;
     int status=av_seek_frame(r->format,r->video,llround((seconds+r->origin)/av_q2d(r->format->streams[r->video]->time_base)),AVSEEK_FLAG_BACKWARD);
@@ -245,18 +280,19 @@ int media_audio(const char *input,const char *output,int (*cancel)(void*),void *
     AVFormatContext *f=NULL; AVCodecContext *decoder=NULL; SwrContext *swr=NULL;
     AVFrame *frame=av_frame_alloc(); AVPacket *packet=av_packet_alloc(); FILE *out=NULL;
     int status=0, index; int64_t written=0; uint8_t *pcm=NULL; unsigned pcm_capacity=0;
+    const AVCodec *codec=NULL;
     if(!frame || !packet) { status=AVERROR(ENOMEM); goto end; }
     if((status=avformat_open_input(&f,input,NULL,NULL))<0 || (status=avformat_find_stream_info(f,NULL))<0) goto end;
     out=fopen(output,"wb+"); if(!out) { status=AVERROR(errno); goto end; }
     if((status=caf_header(out,0))<0) goto end;
-    index=av_find_best_stream(f,AVMEDIA_TYPE_AUDIO,-1,-1,NULL,0);
+    index=av_find_best_stream(f,AVMEDIA_TYPE_AUDIO,-1,-1,&codec,0);
     if(index==AVERROR_STREAM_NOT_FOUND) {
         if(f->duration<=0 || f->duration==AV_NOPTS_VALUE) { status=AVERROR_INVALIDDATA; goto end; }
         written=(int64_t)ceil(f->duration/(double)AV_TIME_BASE*48000);
         if(fseeko(out,68+written*4-1,SEEK_SET) || fputc(0,out)==EOF) { status=AVERROR(EIO); goto end; }
     } else {
         if(index<0) { status=index; goto end; }
-        AVStream *s=f->streams[index]; const AVCodec *codec=avcodec_find_decoder(s->codecpar->codec_id);
+        AVStream *s=f->streams[index];
         if(!codec) { status=AVERROR_DECODER_NOT_FOUND; goto end; }
         decoder=avcodec_alloc_context3(codec); if(!decoder) { status=AVERROR(ENOMEM); goto end; }
         if((status=avcodec_parameters_to_context(decoder,s->codecpar))<0 || (status=avcodec_open2(decoder,codec,NULL))<0) goto end;
@@ -323,22 +359,23 @@ void media_pcm_close(MediaPCMReader *r) {
 }
 MediaPCMReader *media_pcm_open(MediaIO io,double duration,char *error,size_t n) {
     int status=0; MediaPCMReader *r=calloc(1,sizeof(*r));
+    const AVCodec *codec=NULL;
     if(!r) {fail(AVERROR(ENOMEM),error,n);return NULL;}
     uint8_t header[68]; int64_t length=media_caf_header(duration,header);
     if(length<0) {status=AVERROR(EINVAL);goto bad;} r->total=(length-68)/4;
     if((status=input_open(NULL,&io,&r->format,&r->io))<0) goto bad;
-    r->format->codec_whitelist=av_strdup("opus,vorbis,aac,ac3,eac3,flac,mp3,pcm_s16le,pcm_s24le,pcm_s32le,alac,dca");
+    r->format->codec_whitelist=av_strdup("opus,vorbis,aac,ac3,eac3,flac,mp3,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,alac,dca");
     if(!r->format->codec_whitelist) {status=AVERROR(ENOMEM);goto bad;}
     if((status=avformat_find_stream_info(r->format,NULL))<0) goto bad;
     r->origin=r->format->start_time==AV_NOPTS_VALUE?0:r->format->start_time/(double)AV_TIME_BASE;
-    r->audio=av_find_best_stream(r->format,AVMEDIA_TYPE_AUDIO,-1,-1,NULL,0);
+    r->audio=av_find_best_stream(r->format,AVMEDIA_TYPE_AUDIO,-1,-1,&codec,0);
     if(r->audio==AVERROR_STREAM_NOT_FOUND) return r;
     if(r->audio<0) {status=r->audio;goto bad;}
     // Matroska commonly has Cues only for video. Seeking its audio stream can
     // otherwise make FFmpeg scan the movie to build an audio index.
     r->seek_stream=av_find_best_stream(r->format,AVMEDIA_TYPE_VIDEO,-1,-1,NULL,0);
     if(r->seek_stream<0)r->seek_stream=r->audio;
-    AVStream *s=r->format->streams[r->audio]; const AVCodec *codec=avcodec_find_decoder(s->codecpar->codec_id);
+    AVStream *s=r->format->streams[r->audio];
     if(!codec) {status=AVERROR_DECODER_NOT_FOUND;goto bad;}
     r->decoder=avcodec_alloc_context3(codec); r->packet=av_packet_alloc();r->frame=av_frame_alloc();
     if(!r->decoder || !r->packet || !r->frame) {status=AVERROR(ENOMEM);goto bad;}
@@ -425,3 +462,127 @@ int media_pcm_read(MediaPCMReader *r,int64_t first,int frames,uint8_t *output) {
     r->position=first+frames;
     return frames*4;
 }
+
+// Opt-in streaming-remux experiment. No decoder or encoder is opened here.
+typedef struct { uint8_t *bytes; int count, capacity; } FragmentBuffer;
+static int fragment_write(void *opaque,const uint8_t *bytes,int count) {
+    FragmentBuffer *b=opaque;
+    const int limit=32*1024*1024;
+    if(count<0 || count>limit-b->count)return AVERROR(ENOSPC);
+    int needed=b->count+count;
+    if(needed>b->capacity) {
+        int capacity=FFMIN(limit,FFMAX(needed,FFMAX(65536,b->capacity*2)));
+        uint8_t *grown=av_realloc(b->bytes,capacity);
+        if(!grown)return AVERROR(ENOMEM);
+        b->bytes=grown; b->capacity=capacity;
+    }
+    memcpy(b->bytes+b->count,bytes,count); b->count+=count; return count;
+}
+void media_remux_free(uint8_t *bytes) { av_free(bytes); }
+int media_remux_fragment(MediaReader *r,const MediaInfo *info,double start,double end,
+                         int sequence,uint8_t **bytes,int *count,int *init_count,char *error,size_t n) {
+    AVFormatContext *out=NULL; AVIOContext *io=NULL; AVPacket *packet=NULL;
+    AVDictionary *options=NULL; FragmentBuffer buffer={0};
+    int status=AVERROR(EINVAL), audio=-1, init=0, wrote_video=0, video_end=0, audio_end=0;
+    int64_t old_limit=r && r->io?r->io->read_limit:0, payload=0; int packet_count=0;
+    double last_video_end=0;
+    if(!r || !info || !bytes || !count || !init_count || !isfinite(start) || !isfinite(end) || start<0 || end<=start || sequence<1)goto done;
+    *bytes=NULL; *count=0; *init_count=0;
+    AVStream *video=r->format->streams[r->video];
+    if(video->codecpar->codec_id!=AV_CODEC_ID_VP9) { status=AVERROR(ENOSYS); goto done; }
+    for(unsigned i=0;i<r->format->nb_streams;i++) if(r->format->streams[i]->codecpar->codec_type==AVMEDIA_TYPE_AUDIO) {
+        if(r->format->streams[i]->codecpar->codec_id!=AV_CODEC_ID_AAC) { status=AVERROR(ENOSYS); goto done; }
+        audio=i; break;
+    }
+    if(r->io)r->io->read_limit=r->io->bytes_read+64*1024*1024;
+    if((status=media_seek(r,start))<0)goto done;
+    if((status=avformat_alloc_output_context2(&out,NULL,"mp4",NULL))<0)goto done;
+    out->avoid_negative_ts=AVFMT_AVOID_NEG_TS_DISABLED;
+    for(int i=0;i<(audio<0?1:2);i++) {
+        AVStream *input=r->format->streams[i==0?r->video:audio];
+        AVStream *stream=avformat_new_stream(out,NULL);
+        if(!stream) { status=AVERROR(ENOMEM); goto done; }
+        if((status=avcodec_parameters_copy(stream->codecpar,input->codecpar))<0)goto done;
+        stream->codecpar->codec_tag=0; stream->time_base=input->time_base;
+        stream->avg_frame_rate=input->avg_frame_rate;
+        if(i==0) {
+            // The minimal VP9 parser does not expose pixel format. Use the proven
+            // uncompressed keyframe-header metadata rather than opening a decoder.
+            if(info->chroma>1 || (info->bit_depth!=8 && info->bit_depth!=10 && info->bit_depth!=12)) { status=AVERROR(ENOSYS); goto done; }
+            stream->codecpar->format=info->bit_depth==10?AV_PIX_FMT_YUV420P10LE:info->bit_depth==12?AV_PIX_FMT_YUV420P12LE:AV_PIX_FMT_YUV420P;
+            stream->codecpar->profile=info->profile; stream->codecpar->level=info->level;
+        }
+    }
+    uint8_t *scratch=av_malloc(65536);
+    if(!scratch) { status=AVERROR(ENOMEM); goto done; }
+    io=avio_alloc_context(scratch,65536,1,&buffer,NULL,fragment_write,NULL);
+    if(!io) { av_free(scratch); status=AVERROR(ENOMEM); goto done; }
+    io->seekable=0; out->pb=io; out->flags|=AVFMT_FLAG_CUSTOM_IO;
+    av_dict_set(&options,"movflags","frag_custom+frag_discont+empty_moov+default_base_moof+omit_tfhd_offset+skip_trailer",0);
+    av_dict_set_int(&options,"fragment_index",sequence,0);
+    av_dict_set(&options,"use_editlist","0",0);
+    if((status=avformat_write_header(out,&options))<0)goto done;
+    avio_flush(io); init=buffer.count;
+    packet=av_packet_alloc(); if(!packet) { status=AVERROR(ENOMEM); goto done; }
+    audio_end=audio<0;
+    while((status=av_read_frame(r->format,packet))>=0) {
+        int input_index=packet->stream_index;
+        if(input_index!=r->video && input_index!=audio) { av_packet_unref(packet); continue; }
+        AVStream *input=r->format->streams[input_index];
+        if(packet->pts==AV_NOPTS_VALUE || packet->dts==AV_NOPTS_VALUE) { status=AVERROR_INVALIDDATA; goto done; }
+        double seconds=packet->pts*av_q2d(input->time_base)-r->origin;
+        int is_video=input_index==r->video;
+        if(seconds>=end-0.000001) { if(is_video)video_end=1; else audio_end=1; }
+        if(video_end && audio_end) { av_packet_unref(packet); break; }
+        if(seconds<start-0.000001 || seconds>=end-0.000001) { av_packet_unref(packet); continue; }
+        if(is_video && !wrote_video && !(packet->flags&AV_PKT_FLAG_KEY)) { status=AVERROR_INVALIDDATA; goto done; }
+        if(is_video) { wrote_video=1; last_video_end=seconds+packet->duration*av_q2d(input->time_base); }
+        // Bound the muxer's own mdat staging, not only our output AVIO buffer.
+        payload+=packet->size;
+        if(payload>24*1024*1024 || ++packet_count>65536) { status=AVERROR(ENOSPC); goto done; }
+        int output_index=is_video?0:1;
+        int64_t origin=llround(r->origin/av_q2d(input->time_base));
+        packet->pts-=origin; packet->dts-=origin;
+        av_packet_rescale_ts(packet,input->time_base,out->streams[output_index]->time_base);
+        packet->stream_index=output_index; packet->pos=-1;
+        if((status=av_interleaved_write_frame(out,packet))<0)goto done;
+        av_packet_unref(packet);
+    }
+    if(status<0 && status!=AVERROR_EOF)goto done;
+    if(!wrote_video || (!video_end && last_video_end<end-0.1)) { status=AVERROR_INVALIDDATA; goto done; }
+    if((status=av_interleaved_write_frame(out,NULL))<0 || (status=av_write_frame(out,NULL))<0)goto done;
+    avio_flush(io);
+    if(io->error<0) { status=io->error; goto done; }
+    *bytes=buffer.bytes; *count=buffer.count; *init_count=init; buffer.bytes=NULL; status=0;
+done:
+    if(r && r->io)r->io->read_limit=old_limit;
+    av_dict_free(&options); av_packet_free(&packet);
+    if(out)out->pb=NULL;
+    avformat_free_context(out);
+    if(io) { av_freep(&io->buffer); avio_context_free(&io); }
+    av_free(buffer.bytes);
+    return status<0?fail(status,error,n):0;
+}
+
+#ifdef __APPLE__
+#include <mach/mach.h>
+uint64_t media_process_resident_bytes(void) {
+    mach_task_basic_info_data_t info;
+    mach_msg_type_number_t count=MACH_TASK_BASIC_INFO_COUNT;
+    return task_info(mach_task_self(),MACH_TASK_BASIC_INFO,(task_info_t)&info,&count)==KERN_SUCCESS?info.resident_size:0;
+}
+#else
+uint64_t media_process_resident_bytes(void) { return 0; }
+#endif
+
+#ifdef __APPLE__
+#include <sys/resource.h>
+double media_process_cpu_seconds(void) {
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) != 0) return -1;
+    return usage.ru_utime.tv_sec + usage.ru_utime.tv_usec / 1e6 +
+           usage.ru_stime.tv_sec + usage.ru_stime.tv_usec / 1e6;
+}
+#else
+double media_process_cpu_seconds(void) { return -1; }
+#endif

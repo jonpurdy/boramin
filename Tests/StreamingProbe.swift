@@ -99,7 +99,7 @@ import Darwin
         let attributes = try await client.attributesOfItem(atPath: "Nested/native.mp4")
         let nativeSize = (attributes[.fileSizeKey] as! NSNumber).int64Value
         let native = try await PreparedMedia.stream(client: client, path: "Nested/native.mp4", size: nativeSize, title: "Native MP4", directory: FileManager.default.temporaryDirectory, cancellation: CancellationFlag())
-        precondition(!native.vp9)
+        precondition(!native.usesSampleBufferVideo)
         let nativeAsset = AVURLAsset(url: native.timeline)
         let nativePlayable = try await nativeAsset.load(.isPlayable)
         let nativeDuration = try await nativeAsset.load(.duration).seconds

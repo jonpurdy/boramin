@@ -9,6 +9,7 @@ typedef struct {
 } MediaIO;
 typedef struct {
     int vp9, width, height, bit_depth, profile, primaries, transfer, matrix, full_range, level, chroma;
+    uint32_t codec_type; // CoreMedia big-endian FourCC; zero means no supported mapping.
     double duration, frame_rate;
     uint8_t mastering[24], light[4];
     int has_mastering, has_light;
@@ -19,6 +20,10 @@ int media_vp9_header(const uint8_t *bytes, size_t count, MediaInfo *info);
 MediaReader *media_open(const char *path, MediaInfo *info, char *error, size_t capacity);
 MediaReader *media_open_io(MediaIO io, MediaInfo *info, char *error, size_t capacity);
 void media_close(MediaReader *reader);
+// Borrow the container's codec configuration (avcC/hvcC/av1C, etc.) until reader closes.
+int media_video_configuration(MediaReader *reader, const uint8_t **bytes);
+// Decode timestamp for the packet most recently returned by media_packet; NAN if absent.
+double media_packet_dts(MediaReader *reader);
 int media_seek(MediaReader *reader, double seconds);
 // For a fresh probe reader only; changes its position. Returns a complete indexed
 // keyframe list, or zero if unavailable. Index discovery reads at most 4 MiB.
@@ -34,3 +39,13 @@ MediaPCMReader *media_pcm_open(MediaIO io, double duration, char *error, size_t 
 int media_pcm_read(MediaPCMReader *reader, int64_t first_frame, int frames, uint8_t *output);
 void media_pcm_close(MediaPCMReader *reader);
 int64_t media_caf_header(double duration, uint8_t *header);
+// Experimental VP9/AAC fMP4 segment copy. Caller owns returned av_malloc buffer.
+// Bounded to 32 MiB; independently seeks to the requested source keyframe.
+int media_remux_fragment(MediaReader *reader, const MediaInfo *info, double start, double end,
+                         int sequence, uint8_t **bytes, int *count, int *init_count, char *error, size_t capacity);
+void media_remux_free(uint8_t *bytes);
+
+uint64_t media_process_resident_bytes(void);
+
+// Cumulative app CPU time, or -1 when unavailable.
+double media_process_cpu_seconds(void);

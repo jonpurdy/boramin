@@ -15,6 +15,8 @@ with tempfile.TemporaryDirectory(prefix='boramin-tests-') as tmp:
     run([tmp/'favorites-tests'])
     run(['swiftc','Player/ConnectionPreferences.swift','Tests/ConnectionPreferencesTests.swift','-o',tmp/'connection-tests'])
     run([tmp/'connection-tests'])
+    run(['swiftc','-parse-as-library','Player/ConnectionPreferences.swift','Player/Favorites.swift','Player/PlaybackPositions.swift','Shared/ICloudSync.swift','Tests/CloudSyncSchedulingTests.swift','-o',tmp/'cloud-scheduling-tests'])
+    run([tmp/'cloud-scheduling-tests'])
     source=lab/'fixtures/middle.webm'
     audio=tmp/'audio.webm'; caf=tmp/'audio.caf'; packets=tmp/'packets.bin'
     run(['ffmpeg','-v','error','-f','lavfi','-i','color=size=64x64:rate=24:duration=2',
@@ -45,3 +47,14 @@ with tempfile.TemporaryDirectory(prefix='boramin-tests-') as tmp:
         'Player/Playback.swift','Player/Streaming.swift','Player/StreamingAudioLoader.swift','Tests/PlaybackProbe.swift',tmp/'bridge.o',
         root/'vendor/AMSMB2/.build/arm64-apple-macosx/release/libAMSMB2.a',*flags,'-o',tmp/'playback-probe'])
     run([tmp/'playback-probe',source,caf])
+    h264 = tmp/'h264-bframes.mkv'; hevc = tmp/'hevc-main10.mkv'
+    for output, codec, extra in [(h264, 'libx264', ['-preset','fast','-bf','3']),
+                                  (hevc, 'libx265', ['-pix_fmt','yuv420p10le','-x265-params','log-level=error:pools=2:bframes=4'])]:
+        run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24','-t','8',
+             '-c:v',codec,*extra,'-g','48',output])
+    run(['swiftc','-O','-module-cache-path',root/'build/MacModuleCache','-import-objc-header','Player/Player-Bridging-Header.h',
+        '-I',root/'vendor/AMSMB2/.build/arm64-apple-macosx/release/Modules',
+        '-I',root/'vendor/AMSMB2/Dependencies/libsmb2/include','-Xcc',f'-I{root}/vendor/AMSMB2/Dependencies/libsmb2/lib',
+        'Player/Playback.swift','Player/Streaming.swift','Player/StreamingAudioLoader.swift','Tests/MKVCodecTests.swift',tmp/'bridge.o',
+        root/'vendor/AMSMB2/.build/arm64-apple-macosx/release/libAMSMB2.a',*flags,'-o',tmp/'mkv-codec-tests'])
+    run([tmp/'mkv-codec-tests',h264,hevc])

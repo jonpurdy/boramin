@@ -1,8 +1,10 @@
 # BoraMin iCloud sync design
 
-Research date: October 21, 2026. The main tvOS player and iOS companion now implement encrypted sync through Shared/ICloudSync.swift, with Sync via iCloud in Settings. See [the current README](../README.md) and [companion/device checks](../SyncTest/README.md). The design notes below record the research and remaining cross-platform/per-profile considerations.
+Research date: October 21, 2026; implementation status updated October 22. The tvOS, iOS and macOS apps share `Shared/ICloudSync.swift` and the **Sync via iCloud** setting. See the [current README](../README.md), [iOS/device records](../iOS/README.md) and [Mac verification](../MacOS/README.md).
 
-Use one CloudKit container, proposed `iCloud.com.example.BoraMin`, across tvOS, iOS/iPadOS, and macOS. Store each user's records in their private database and a custom record zone. Keep local persistence so browsing, playback, and password retrieval work without an internet connection. Use CKSyncEngine to synchronize the local changes and apply remote changes. No BoraMin account or custom server is needed.
+The remaining document preserves the original design proposal and cross-platform/per-profile caveats. Proposed record names and UUIDs below are conceptual, not the deployed schema: the implementation uses one encrypted `BoraMinUserData` record type in `BoraMinUserData-v1`, opaque hash identities, and `kind` fields for server/connection/favorite/position/video/setting records. The container is already configured, not awaiting selection.
+
+The apps use one CloudKit container, `iCloud.com.example.BoraMin`, across tvOS, iOS/iPadOS, and macOS. Store each user's records in their private database and a custom record zone. Keep local persistence so browsing, playback, and password retrieval work without an internet connection. Use CKSyncEngine to synchronize the local changes and apply remote changes. No BoraMin account or custom server is needed.
 
 ## Why CloudKit
 
@@ -70,3 +72,7 @@ Adding the user-management entitlement may change which local preferences contai
 - [iCloud key-value storage limits](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/UserDefaults/StoringPreferenceDatainiCloud/StoringPreferenceDatainiCloud.html)
 - [User Management entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.user-management)
 - [Personalizing a tvOS app for each user](https://developer.apple.com/documentation/tvservices/personalizing-your-app-for-each-user-on-apple-tv)
+
+## Production deployment
+
+On October 22, 2026 the reviewed schema was deployed through CloudKit Console, without copying development records. Production shows `BoraMinUserData.payload` as Encrypted Bytes and `password` as Encrypted String. The local Mac App Store Connect export was verified to use Production CloudKit and production APNs. Normal development builds remain on Development. See [TestFlight preparation](TestFlight.md) for the export workflow, validation and remaining environment-isolation limits.

@@ -10,40 +10,80 @@
 	<string>56</string>
 	<key>objects</key>
 	<dict>
-		<key>04A710DCD8587D2CC604D7AD</key>
+		<key>02734DB5853FC9842997F20C</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
 			<key>path</key>
-			<string>PlaybackPositions.swift</string>
+			<string>MacOS/MacApp.swift</string>
 			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
+			<string>SOURCE_ROOT</string>
 		</dict>
-		<key>04B7D7D208B9621102EFD5E0</key>
+		<key>0644ACD8397FE3D708B382D8</key>
 		<dict>
 			<key>fileRef</key>
-			<string>1BA02A97115EA927423D5C3D</string>
+			<string>B0B70DC5067A33F5F11EA7D2</string>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
-		<key>076973D050908CA91B8E0E11</key>
+		<key>07CA1E69F6068DEA30A4DA6B</key>
 		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>CLANG_ENABLE_MODULES</key>
+				<string>YES</string>
+				<key>ENABLE_USER_SCRIPT_SANDBOXING</key>
+				<string>YES</string>
+				<key>GCC_OPTIMIZATION_LEVEL</key>
+				<string>3</string>
+				<key>SWIFT_OPTIMIZATION_LEVEL</key>
+				<string>-O</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+			</dict>
 			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.c</string>
-			<key>path</key>
-			<string>MediaBridge.c</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Release</string>
+		</dict>
+		<key>07F0A92ADE228BECBB4BB96B</key>
+		<dict>
+			<key>buildConfigurationList</key>
+			<string>E8928196AB7C7122D28666B1</string>
+			<key>buildPhases</key>
+			<array>
+				<string>E09DF81221165803A63FCE3F</string>
+				<string>75B2CFA446899AB5511C46BB</string>
+				<string>D39763E32B387764D8AE2095</string>
+			</array>
+			<key>buildRules</key>
+			<array/>
+			<key>dependencies</key>
+			<array/>
+			<key>isa</key>
+			<string>PBXNativeTarget</string>
+			<key>name</key>
+			<string>BoraMin tvOS</string>
+			<key>packageProductDependencies</key>
+			<array>
+				<string>D00D75AFAC051DC314560D34</string>
+			</array>
+			<key>productName</key>
+			<string>BoraMin</string>
+			<key>productReference</key>
+			<string>CB4C26404F376F6FC7C5797A</string>
+			<key>productType</key>
+			<string>com.apple.product-type.application</string>
 		</dict>
 		<key>0A3E27B8CA818264D75C8D81</key>
 		<dict>
 			<key>children</key>
 			<array>
-				<string>A172CEDCAE47474B615C54D5</string>
+				<string>BA9672E061E889F65413913D</string>
+				<string>CB4C26404F376F6FC7C5797A</string>
+				<string>D9B6FA89CFD92B39EF1B237C</string>
 			</array>
 			<key>isa</key>
 			<string>PBXGroup</string>
@@ -52,33 +92,16 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>0B0C687DF8B6B8DC790B519C</key>
-		<dict>
-			<key>buildSettings</key>
-			<dict>
-				<key>CLANG_ENABLE_MODULES</key>
-				<string>YES</string>
-				<key>GCC_OPTIMIZATION_LEVEL</key>
-				<string>3</string>
-				<key>SDKROOT</key>
-				<string>appletvos</string>
-				<key>SWIFT_OPTIMIZATION_LEVEL</key>
-				<string>-O</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
-				<key>TVOS_DEPLOYMENT_TARGET</key>
-				<string>26.6</string>
-			</dict>
-			<key>isa</key>
-			<string>XCBuildConfiguration</string>
-			<key>name</key>
-			<string>Release</string>
-		</dict>
 		<key>0D6E4079E36703EBD37C0072</key>
 		<dict>
 			<key>children</key>
 			<array>
-				<string>5694D08A2E53FFCAE0C3103E</string>
+				<string>9F9F3F441EC0DABD131B608A</string>
+				<string>B8A7C4C7C43B9A2F11EEEA63</string>
+				<string>ED1D339C2F7345DB0DD72BD9</string>
+				<string>6291EB9EB423C3FB2D70AF78</string>
+				<string>1B3039B2E15DD2AB7EA6156D</string>
+				<string>63A8B02B52CDAD9CA875D42B</string>
 				<string>0A3E27B8CA818264D75C8D81</string>
 			</array>
 			<key>isa</key>
@@ -86,30 +109,192 @@
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>1B672BF3DA427763BF644BE3</key>
+		<key>0DEB104F0C59011E9E91999E</key>
 		<dict>
-			<key>buildConfigurations</key>
-			<array>
-				<string>6C7EFF6369083C8E1F2B1994</string>
-				<string>DD75E2CB1C510A828AC72D96</string>
-			</array>
-			<key>defaultConfigurationIsVisible</key>
-			<integer>0</integer>
-			<key>defaultConfigurationName</key>
-			<string>Release</string>
+			<key>fileRef</key>
+			<string>B0B70DC5067A33F5F11EA7D2</string>
 			<key>isa</key>
-			<string>XCConfigurationList</string>
+			<string>PBXBuildFile</string>
 		</dict>
-		<key>1BA02A97115EA927423D5C3D</key>
+		<key>13F9B6163128F70D004CB7DB</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E8440AD440A4A42A51A4EBD0</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>145A0FB3906CEC2FB8D34ABB</key>
+		<dict>
+			<key>buildConfigurationList</key>
+			<string>7803F89E68AD310E0180340A</string>
+			<key>buildPhases</key>
+			<array>
+				<string>D0BAEA2AE43CE8A678291F45</string>
+				<string>B6F03C79948980C9C9C49D4A</string>
+				<string>FC6B20D6FAF10CB5CF569D50</string>
+			</array>
+			<key>buildRules</key>
+			<array/>
+			<key>dependencies</key>
+			<array/>
+			<key>isa</key>
+			<string>PBXNativeTarget</string>
+			<key>name</key>
+			<string>BoraMin macOS</string>
+			<key>packageProductDependencies</key>
+			<array>
+				<string>30A0E27151F5864320E401DF</string>
+			</array>
+			<key>productName</key>
+			<string>BoraMin</string>
+			<key>productReference</key>
+			<string>D9B6FA89CFD92B39EF1B237C</string>
+			<key>productType</key>
+			<string>com.apple.product-type.application</string>
+		</dict>
+		<key>15AF1D943EBB45813058B59D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.xml</string>
+			<key>path</key>
+			<string>iOS/Info.plist</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>1708880747902AEFEEAD562C</key>
+		<dict>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>63661EEA1EC51651F9C7A019</string>
+			</array>
+			<key>isa</key>
+			<string>PBXResourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
+		</dict>
+		<key>1A5554CE5C5600445A4EA352</key>
+		<dict>
+			<key>fileRef</key>
+			<string>64E55F433D92D365D8F85D72</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>1AB4BFFF549B6671331E8F6B</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>ARCHS</key>
+				<string>arm64</string>
+				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
+				<string>AppIcon</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>MacOS/BoraMin.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>COMBINE_HIDPI_IMAGES</key>
+				<string>YES</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>EXAMPLE000</string>
+				<key>ENABLE_HARDENED_RUNTIME</key>
+				<string>YES</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>HEADER_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-macos/include</string>
+				</array>
+				<key>INFOPLIST_FILE</key>
+				<string>MacOS/Info.plist</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/../Frameworks</string>
+				</array>
+				<key>LIBRARY_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-macos/lib</string>
+				</array>
+				<key>MACOSX_DEPLOYMENT_TARGET</key>
+				<string>15.0</string>
+				<key>MARKETING_VERSION</key>
+				<string>0.1</string>
+				<key>OTHER_LDFLAGS</key>
+				<array>
+					<string>-lavformat</string>
+					<string>-lavcodec</string>
+					<string>-lswresample</string>
+					<string>-lavutil</string>
+					<string>-framework</string>
+					<string>AudioToolbox</string>
+					<string>-framework</string>
+					<string>CoreMedia</string>
+					<string>-framework</string>
+					<string>VideoToolbox</string>
+					<string>-lz</string>
+					<string>-lbz2</string>
+					<string>-liconv</string>
+				</array>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>com.example.BoraMin</string>
+				<key>PRODUCT_MODULE_NAME</key>
+				<string>BoraMin_macos</string>
+				<key>PRODUCT_NAME</key>
+				<string>BoraMin</string>
+				<key>SDKROOT</key>
+				<string>macosx</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>macosx</string>
+				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
+				<string>Player/Player-Bridging-Header.h</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Release</string>
+		</dict>
+		<key>1B3039B2E15DD2AB7EA6156D</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>47BF6A0AB911510E02966229</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>name</key>
+			<string>Config</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>1E97B6F225DED55A6FF4D51D</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
 			<key>path</key>
-			<string>Favorites.swift</string>
+			<string>MacOS/MacSettings.swift</string>
 			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>20D9999757F9F1E70279BBA7</key>
+		<dict>
+			<key>fileRef</key>
+			<string>EB52ABF6F902D30BED31E845</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>2371C0AD86A4926C86B7AA03</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E8440AD440A4A42A51A4EBD0</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
 		</dict>
 		<key>244210E48437B6556980A702</key>
 		<dict>
@@ -117,9 +302,60 @@
 			<dict>
 				<key>LastUpgradeCheck</key>
 				<string>2630</string>
+				<key>TargetAttributes</key>
+				<dict>
+					<key>07F0A92ADE228BECBB4BB96B</key>
+					<dict>
+						<key>SystemCapabilities</key>
+						<dict>
+							<key>com.apple.Push</key>
+							<dict>
+								<key>enabled</key>
+								<integer>1</integer>
+							</dict>
+							<key>com.apple.iCloud</key>
+							<dict>
+								<key>enabled</key>
+								<integer>1</integer>
+							</dict>
+						</dict>
+					</dict>
+					<key>145A0FB3906CEC2FB8D34ABB</key>
+					<dict>
+						<key>SystemCapabilities</key>
+						<dict>
+							<key>com.apple.Push</key>
+							<dict>
+								<key>enabled</key>
+								<integer>1</integer>
+							</dict>
+							<key>com.apple.iCloud</key>
+							<dict>
+								<key>enabled</key>
+								<integer>1</integer>
+							</dict>
+						</dict>
+					</dict>
+					<key>FB9399914FE4E505B6039AA5</key>
+					<dict>
+						<key>SystemCapabilities</key>
+						<dict>
+							<key>com.apple.Push</key>
+							<dict>
+								<key>enabled</key>
+								<integer>1</integer>
+							</dict>
+							<key>com.apple.iCloud</key>
+							<dict>
+								<key>enabled</key>
+								<integer>1</integer>
+							</dict>
+						</dict>
+					</dict>
+				</dict>
 			</dict>
 			<key>buildConfigurationList</key>
-			<string>76F8DEC3DFE0BDB465198890</string>
+			<string>F905B102B4F13BD6617D8EB3</string>
 			<key>compatibilityVersion</key>
 			<string>Xcode 14.0</string>
 			<key>developmentRegion</key>
@@ -145,124 +381,100 @@
 			<string></string>
 			<key>targets</key>
 			<array>
-				<string>34A04005BCAF206EEC990BD9</string>
+				<string>FB9399914FE4E505B6039AA5</string>
+				<string>07F0A92ADE228BECBB4BB96B</string>
+				<string>145A0FB3906CEC2FB8D34ABB</string>
 			</array>
 		</dict>
-		<key>34A04005BCAF206EEC990BD9</key>
-		<dict>
-			<key>buildConfigurationList</key>
-			<string>1B672BF3DA427763BF644BE3</string>
-			<key>buildPhases</key>
-			<array>
-				<string>878A52FC5FF6A57D50B7B870</string>
-				<string>E2AA269EB967A8853A258BFA</string>
-				<string>41D311A605520FC7B8B9A980</string>
-			</array>
-			<key>buildRules</key>
-			<array/>
-			<key>dependencies</key>
-			<array/>
-			<key>isa</key>
-			<string>PBXNativeTarget</string>
-			<key>name</key>
-			<string>BoraMin</string>
-			<key>packageProductDependencies</key>
-			<array>
-				<string>DDC59701C6BDD9C44C766CEE</string>
-			</array>
-			<key>productName</key>
-			<string>BoraMin</string>
-			<key>productReference</key>
-			<string>A172CEDCAE47474B615C54D5</string>
-			<key>productType</key>
-			<string>com.apple.product-type.application</string>
-		</dict>
-		<key>3FC060B49976965AA09DBEFE</key>
+		<key>255C91B62A6E49E9F5F14733</key>
 		<dict>
 			<key>fileRef</key>
-			<string>F68440E510C02A3309224383</string>
+			<string>B0B70DC5067A33F5F11EA7D2</string>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
-		<key>41D311A605520FC7B8B9A980</key>
+		<key>26A42C2B6B2CA86A378A454E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Player/BoraMinApp.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>2B23A31EEC75B029432F2445</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>CLANG_ENABLE_MODULES</key>
+				<string>YES</string>
+				<key>ENABLE_USER_SCRIPT_SANDBOXING</key>
+				<string>YES</string>
+				<key>GCC_OPTIMIZATION_LEVEL</key>
+				<string>0</string>
+				<key>SWIFT_OPTIMIZATION_LEVEL</key>
+				<string>-Onone</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Debug</string>
+		</dict>
+		<key>2DA92FE64169F9EF23399A0A</key>
 		<dict>
 			<key>buildActionMask</key>
 			<integer>2147483647</integer>
 			<key>files</key>
 			<array>
-				<string>4E663C4BFD9528CA56D6E1F6</string>
+				<string>AFF0ABE24D6D4E3D3E12322D</string>
 			</array>
 			<key>isa</key>
-			<string>PBXResourcesBuildPhase</string>
+			<string>PBXFrameworksBuildPhase</string>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
 		</dict>
-		<key>48FBECE7B196724C65C1CF0D</key>
+		<key>2F8BDEBE86336F507E353729</key>
+		<dict>
+			<key>fileRef</key>
+			<string>26A42C2B6B2CA86A378A454E</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>2F9D106247E0407D059DC12B</key>
+		<dict>
+			<key>fileRef</key>
+			<string>BFAF7ACB17F29A6048C4A881</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>30A0E27151F5864320E401DF</key>
+		<dict>
+			<key>isa</key>
+			<string>XCSwiftPackageProductDependency</string>
+			<key>productName</key>
+			<string>AMSMB2</string>
+		</dict>
+		<key>30D42042D28090946CDBCB58</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.c.h</string>
 			<key>path</key>
-			<string>Player-Bridging-Header.h</string>
+			<string>Player/MediaBridge.h</string>
 			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
+			<string>SOURCE_ROOT</string>
 		</dict>
-		<key>4E663C4BFD9528CA56D6E1F6</key>
-		<dict>
-			<key>fileRef</key>
-			<string>E2A75ED5B9A5669418D1E973</string>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-		</dict>
-		<key>5694D08A2E53FFCAE0C3103E</key>
-		<dict>
-			<key>children</key>
-			<array>
-				<string>A640B272AB265113500AE658</string>
-				<string>F68440E510C02A3309224383</string>
-				<string>C112316C06EF1A1147A2495D</string>
-				<string>1BA02A97115EA927423D5C3D</string>
-				<string>9AC3B5AD93CBC0305C62F78F</string>
-				<string>076973D050908CA91B8E0E11</string>
-				<string>8A744F25FF824EB99AAB3A3E</string>
-				<string>743E07C4C7A935E3D22100A9</string>
-				<string>04A710DCD8587D2CC604D7AD</string>
-				<string>48FBECE7B196724C65C1CF0D</string>
-				<string>B903B2DC7B13AEE6EA7FE932</string>
-				<string>7E44785030F02AA51D1CFECD</string>
-				<string>CFCD0EED2D1704C21A545A1C</string>
-				<string>E2A75ED5B9A5669418D1E973</string>
-			</array>
-			<key>isa</key>
-			<string>PBXGroup</string>
-			<key>path</key>
-			<string>Player</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>617BD68162267DA30EA957E9</key>
-		<dict>
-			<key>fileRef</key>
-			<string>076973D050908CA91B8E0E11</string>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-		</dict>
-		<key>6638737595EAC777A4283F7C</key>
-		<dict>
-			<key>fileRef</key>
-			<string>743E07C4C7A935E3D22100A9</string>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-		</dict>
-		<key>6C7EFF6369083C8E1F2B1994</key>
+		<key>39B25BA2E053AA19804450D4</key>
 		<dict>
 			<key>buildSettings</key>
 			<dict>
 				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
 				<string>AppIcon</string>
-				<key>CLANG_ENABLE_MODULES</key>
-				<string>YES</string>
 				<key>CODE_SIGN_ENTITLEMENTS</key>
 				<string>Config/BoraMin.entitlements</string>
 				<key>CODE_SIGN_STYLE</key>
@@ -271,10 +483,6 @@
 				<string>1</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
-				<key>ENABLE_USER_SCRIPT_SANDBOXING</key>
-				<string>YES</string>
-				<key>GCC_OPTIMIZATION_LEVEL</key>
-				<string>0</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -307,18 +515,321 @@
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.example.BoraMin</string>
+				<key>PRODUCT_MODULE_NAME</key>
+				<string>BoraMin_tvos</string>
 				<key>PRODUCT_NAME</key>
-				<string>$(TARGET_NAME)</string>
+				<string>BoraMin</string>
 				<key>SDKROOT</key>
 				<string>appletvos</string>
 				<key>SUPPORTED_PLATFORMS</key>
 				<string>appletvos</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
 				<string>Player/Player-Bridging-Header.h</string>
-				<key>SWIFT_OPTIMIZATION_LEVEL</key>
-				<string>-Onone</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>3</string>
+				<key>TVOS_DEPLOYMENT_TARGET</key>
+				<string>26.6</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Release</string>
+		</dict>
+		<key>3A18BF8BC232C51387709D71</key>
+		<dict>
+			<key>fileRef</key>
+			<string>EF53A87DBEEC0376B53B62CD</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>3B576563B74800812453E33B</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C149F867928E396D05FA3014</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>3FDC2083208755B2FB34E6BD</key>
+		<dict>
+			<key>fileRef</key>
+			<string>D7F05063D0F52BCD6EDCDCAE</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>4046A703C981E9075A0CB244</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.xml</string>
+			<key>path</key>
+			<string>Player/Info.plist</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>47BF6A0AB911510E02966229</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.entitlements</string>
+			<key>path</key>
+			<string>Config/BoraMin.entitlements</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>4A3228523C7C7087E574FB6D</key>
+		<dict>
+			<key>fileRef</key>
+			<string>FFC476E5E39A7834CA83175E</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>4DF484B46DD3FF853E1F4864</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.xml</string>
+			<key>path</key>
+			<string>MacOS/Info.plist</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>53C23B1707ECAB0114718C19</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.h</string>
+			<key>path</key>
+			<string>Player/Player-Bridging-Header.h</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>542A9558DDA10A15976E4997</key>
+		<dict>
+			<key>fileRef</key>
+			<string>801F71984C7B700CD646634C</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>57D64858DC7802C1911D65C0</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C041F29914D4D17951D13A04</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>5873C5E628865322985E5A3E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>30A0E27151F5864320E401DF</string>
+		</dict>
+		<key>6291EB9EB423C3FB2D70AF78</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>02734DB5853FC9842997F20C</string>
+				<string>95A6DB0840F239841A7BBA31</string>
+				<string>C041F29914D4D17951D13A04</string>
+				<string>1E97B6F225DED55A6FF4D51D</string>
+				<string>D7F05063D0F52BCD6EDCDCAE</string>
+				<string>4DF484B46DD3FF853E1F4864</string>
+				<string>B5F91E86994814F5A7C8B928</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>name</key>
+			<string>MacOS</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>63661EEA1EC51651F9C7A019</key>
+		<dict>
+			<key>fileRef</key>
+			<string>B3AE2DBF7845F6906045086C</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>63A8B02B52CDAD9CA875D42B</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>B3AE2DBF7845F6906045086C</string>
+				<string>EF53A87DBEEC0376B53B62CD</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>name</key>
+			<string>Assets</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>64E55F433D92D365D8F85D72</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Player/Streaming.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>64F1621F67E72CA428B4A737</key>
+		<dict>
+			<key>fileRef</key>
+			<string>EB52ABF6F902D30BED31E845</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>6DA74ED1FE1A425871EF6F43</key>
+		<dict>
+			<key>fileRef</key>
+			<string>1E97B6F225DED55A6FF4D51D</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>6E198BF27921568D95F6D61E</key>
+		<dict>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>2F9D106247E0407D059DC12B</string>
+				<string>4A3228523C7C7087E574FB6D</string>
+				<string>824362E031C424861C536F69</string>
+				<string>0644ACD8397FE3D708B382D8</string>
+				<string>13F9B6163128F70D004CB7DB</string>
+				<string>20D9999757F9F1E70279BBA7</string>
+				<string>1A5554CE5C5600445A4EA352</string>
+				<string>B4DA894297D455610E91831A</string>
+				<string>3B576563B74800812453E33B</string>
+				<string>A0942B6D368BAA89506B3390</string>
+			</array>
+			<key>isa</key>
+			<string>PBXSourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
+		</dict>
+		<key>75B2CFA446899AB5511C46BB</key>
+		<dict>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>8E039907E74FC3187CE4FCE1</string>
+			</array>
+			<key>isa</key>
+			<string>PBXFrameworksBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
+		</dict>
+		<key>7803F89E68AD310E0180340A</key>
+		<dict>
+			<key>buildConfigurations</key>
+			<array>
+				<string>978BA34C346821CB49BAAD4C</string>
+				<string>1AB4BFFF549B6671331E8F6B</string>
+			</array>
+			<key>defaultConfigurationIsVisible</key>
+			<integer>0</integer>
+			<key>defaultConfigurationName</key>
+			<string>Release</string>
+			<key>isa</key>
+			<string>XCConfigurationList</string>
+		</dict>
+		<key>7B82A38E0189021F036FEC7E</key>
+		<dict>
+			<key>fileRef</key>
+			<string>EB52ABF6F902D30BED31E845</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>801F71984C7B700CD646634C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Player/Favorites.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>824362E031C424861C536F69</key>
+		<dict>
+			<key>fileRef</key>
+			<string>801F71984C7B700CD646634C</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>8326FB8BC491C44C3877D29D</key>
+		<dict>
+			<key>fileRef</key>
+			<string>02734DB5853FC9842997F20C</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>85123F5DE5C7203634B81899</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
+				<string>AppIcon</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>Config/BoraMin.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>EXAMPLE000</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>HEADER_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg/include</string>
+				</array>
+				<key>INFOPLIST_FILE</key>
+				<string>Player/Info.plist</string>
+				<key>LIBRARY_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg/lib</string>
+				</array>
+				<key>MARKETING_VERSION</key>
+				<string>0.1</string>
+				<key>OTHER_LDFLAGS</key>
+				<array>
+					<string>-lavformat</string>
+					<string>-lavcodec</string>
+					<string>-lswresample</string>
+					<string>-lavutil</string>
+					<string>-framework</string>
+					<string>AudioToolbox</string>
+					<string>-framework</string>
+					<string>CoreMedia</string>
+					<string>-framework</string>
+					<string>VideoToolbox</string>
+					<string>-lz</string>
+					<string>-lbz2</string>
+					<string>-liconv</string>
+				</array>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>com.example.BoraMin</string>
+				<key>PRODUCT_MODULE_NAME</key>
+				<string>BoraMin_tvos</string>
+				<key>PRODUCT_NAME</key>
+				<string>BoraMin</string>
+				<key>SDKROOT</key>
+				<string>appletvos</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>appletvos</string>
+				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
+				<string>Player/Player-Bridging-Header.h</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>3</string>
 				<key>TVOS_DEPLOYMENT_TARGET</key>
@@ -329,45 +840,390 @@
 			<key>name</key>
 			<string>Debug</string>
 		</dict>
-		<key>73EBF6644258C120893E685D</key>
+		<key>864167A39F07DDDB1B61DF65</key>
 		<dict>
-			<key>buildSettings</key>
-			<dict>
-				<key>CLANG_ENABLE_MODULES</key>
-				<string>YES</string>
-				<key>GCC_OPTIMIZATION_LEVEL</key>
-				<string>0</string>
-				<key>SDKROOT</key>
-				<string>appletvos</string>
-				<key>SWIFT_OPTIMIZATION_LEVEL</key>
-				<string>-Onone</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
-				<key>TVOS_DEPLOYMENT_TARGET</key>
-				<string>26.6</string>
-			</dict>
+			<key>fileRef</key>
+			<string>BFAF7ACB17F29A6048C4A881</string>
 			<key>isa</key>
-			<string>XCBuildConfiguration</string>
-			<key>name</key>
-			<string>Debug</string>
+			<string>PBXBuildFile</string>
 		</dict>
-		<key>743E07C4C7A935E3D22100A9</key>
+		<key>8E039907E74FC3187CE4FCE1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>D00D75AFAC051DC314560D34</string>
+		</dict>
+		<key>8FE44E6C97A501CE55B5EAB7</key>
+		<dict>
+			<key>fileRef</key>
+			<string>64E55F433D92D365D8F85D72</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>90CBC478660CD39321381AAE</key>
+		<dict>
+			<key>fileRef</key>
+			<string>64E55F433D92D365D8F85D72</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>95A6DB0840F239841A7BBA31</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
 			<key>path</key>
-			<string>Playback.swift</string>
+			<string>MacOS/MacBrowser.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>978BA34C346821CB49BAAD4C</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>ARCHS</key>
+				<string>arm64</string>
+				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
+				<string>AppIcon</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>MacOS/BoraMin.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>COMBINE_HIDPI_IMAGES</key>
+				<string>YES</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>EXAMPLE000</string>
+				<key>ENABLE_HARDENED_RUNTIME</key>
+				<string>YES</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>HEADER_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-macos/include</string>
+				</array>
+				<key>INFOPLIST_FILE</key>
+				<string>MacOS/Info.plist</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/../Frameworks</string>
+				</array>
+				<key>LIBRARY_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-macos/lib</string>
+				</array>
+				<key>MACOSX_DEPLOYMENT_TARGET</key>
+				<string>15.0</string>
+				<key>MARKETING_VERSION</key>
+				<string>0.1</string>
+				<key>OTHER_LDFLAGS</key>
+				<array>
+					<string>-lavformat</string>
+					<string>-lavcodec</string>
+					<string>-lswresample</string>
+					<string>-lavutil</string>
+					<string>-framework</string>
+					<string>AudioToolbox</string>
+					<string>-framework</string>
+					<string>CoreMedia</string>
+					<string>-framework</string>
+					<string>VideoToolbox</string>
+					<string>-lz</string>
+					<string>-lbz2</string>
+					<string>-liconv</string>
+				</array>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>com.example.BoraMin</string>
+				<key>PRODUCT_MODULE_NAME</key>
+				<string>BoraMin_macos</string>
+				<key>PRODUCT_NAME</key>
+				<string>BoraMin</string>
+				<key>SDKROOT</key>
+				<string>macosx</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>macosx</string>
+				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
+				<string>Player/Player-Bridging-Header.h</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Debug</string>
+		</dict>
+		<key>9F9F3F441EC0DABD131B608A</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>26A42C2B6B2CA86A378A454E</string>
+				<string>BFAF7ACB17F29A6048C4A881</string>
+				<string>FFC476E5E39A7834CA83175E</string>
+				<string>801F71984C7B700CD646634C</string>
+				<string>B0B70DC5067A33F5F11EA7D2</string>
+				<string>30D42042D28090946CDBCB58</string>
+				<string>E8440AD440A4A42A51A4EBD0</string>
+				<string>EB52ABF6F902D30BED31E845</string>
+				<string>53C23B1707ECAB0114718C19</string>
+				<string>64E55F433D92D365D8F85D72</string>
+				<string>FD81068AD11CEE6191CAFB86</string>
+				<string>4046A703C981E9075A0CB244</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>name</key>
+			<string>Player</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
-		<key>76F8DEC3DFE0BDB465198890</key>
+		<key>A0942B6D368BAA89506B3390</key>
+		<dict>
+			<key>fileRef</key>
+			<string>D3E616A9C9F7339A996A1BEB</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>A5BF34B3C27A6C8B1F1D294F</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
+				<string>BoraMin</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>iOS/BoraMin.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>EXAMPLE000</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>HEADER_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-ios/include</string>
+				</array>
+				<key>INFOPLIST_FILE</key>
+				<string>iOS/Info.plist</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>26.0</string>
+				<key>LIBRARY_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
+				</array>
+				<key>MARKETING_VERSION</key>
+				<string>0.1</string>
+				<key>OTHER_LDFLAGS</key>
+				<array>
+					<string>-lavformat</string>
+					<string>-lavcodec</string>
+					<string>-lswresample</string>
+					<string>-lavutil</string>
+					<string>-framework</string>
+					<string>AudioToolbox</string>
+					<string>-framework</string>
+					<string>CoreMedia</string>
+					<string>-framework</string>
+					<string>VideoToolbox</string>
+					<string>-lz</string>
+					<string>-lbz2</string>
+					<string>-liconv</string>
+				</array>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>com.example.BoraMin</string>
+				<key>PRODUCT_MODULE_NAME</key>
+				<string>BoraMin_ios</string>
+				<key>PRODUCT_NAME</key>
+				<string>BoraMin</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
+				<string>Player/Player-Bridging-Header.h</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Debug</string>
+		</dict>
+		<key>A696983643899A2FA8DA05AF</key>
+		<dict>
+			<key>fileRef</key>
+			<string>FFC476E5E39A7834CA83175E</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>A8BAFF66BAC13FFE2DB9BEB5</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
+				<string>BoraMin</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>iOS/BoraMin.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string>EXAMPLE000</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>HEADER_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-ios/include</string>
+				</array>
+				<key>INFOPLIST_FILE</key>
+				<string>iOS/Info.plist</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>26.0</string>
+				<key>LIBRARY_SEARCH_PATHS</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
+				</array>
+				<key>MARKETING_VERSION</key>
+				<string>0.1</string>
+				<key>OTHER_LDFLAGS</key>
+				<array>
+					<string>-lavformat</string>
+					<string>-lavcodec</string>
+					<string>-lswresample</string>
+					<string>-lavutil</string>
+					<string>-framework</string>
+					<string>AudioToolbox</string>
+					<string>-framework</string>
+					<string>CoreMedia</string>
+					<string>-framework</string>
+					<string>VideoToolbox</string>
+					<string>-lz</string>
+					<string>-lbz2</string>
+					<string>-liconv</string>
+				</array>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>com.example.BoraMin</string>
+				<key>PRODUCT_MODULE_NAME</key>
+				<string>BoraMin_ios</string>
+				<key>PRODUCT_NAME</key>
+				<string>BoraMin</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos</string>
+				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
+				<string>Player/Player-Bridging-Header.h</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Release</string>
+		</dict>
+		<key>AF6C51E15A17BEF41CAA890E</key>
+		<dict>
+			<key>fileRef</key>
+			<string>FD81068AD11CEE6191CAFB86</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>AFF0ABE24D6D4E3D3E12322D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>D73DA778FF676E11CE0D974E</string>
+		</dict>
+		<key>B0B70DC5067A33F5F11EA7D2</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.c.c</string>
+			<key>path</key>
+			<string>Player/MediaBridge.c</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>B149C7A24184C8A1BD39F0BE</key>
+		<dict>
+			<key>fileRef</key>
+			<string>BFAF7ACB17F29A6048C4A881</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>B3AE2DBF7845F6906045086C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>folder.iconcomposer.icon</string>
+			<key>path</key>
+			<string>Assets/BoraMin.icon</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>B4DA894297D455610E91831A</key>
+		<dict>
+			<key>fileRef</key>
+			<string>FD81068AD11CEE6191CAFB86</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>B4F2F6D6E1194528675DAA59</key>
+		<dict>
+			<key>fileRef</key>
+			<string>FD81068AD11CEE6191CAFB86</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>B5F91E86994814F5A7C8B928</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.entitlements</string>
+			<key>path</key>
+			<string>MacOS/BoraMin.entitlements</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>B6F03C79948980C9C9C49D4A</key>
+		<dict>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>5873C5E628865322985E5A3E</string>
+			</array>
+			<key>isa</key>
+			<string>PBXFrameworksBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
+		</dict>
+		<key>B8A7C4C7C43B9A2F11EEEA63</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>C149F867928E396D05FA3014</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>name</key>
+			<string>Shared</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BA2BE3F7F20040F88DA279BA</key>
 		<dict>
 			<key>buildConfigurations</key>
 			<array>
-				<string>73EBF6644258C120893E685D</string>
-				<string>0B0C687DF8B6B8DC790B519C</string>
+				<string>A5BF34B3C27A6C8B1F1D294F</string>
+				<string>A8BAFF66BAC13FFE2DB9BEB5</string>
 			</array>
 			<key>defaultConfigurationIsVisible</key>
 			<integer>0</integer>
@@ -376,114 +1232,18 @@
 			<key>isa</key>
 			<string>XCConfigurationList</string>
 		</dict>
-		<key>7E44785030F02AA51D1CFECD</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>StreamingAudioLoader.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>878A52FC5FF6A57D50B7B870</key>
-		<dict>
-			<key>buildActionMask</key>
-			<integer>2147483647</integer>
-			<key>files</key>
-			<array>
-				<string>98D951579835D161F52EA80C</string>
-				<string>3FC060B49976965AA09DBEFE</string>
-				<string>9E6A6E06AB4EEA3DD4FDF3F6</string>
-				<string>04B7D7D208B9621102EFD5E0</string>
-				<string>617BD68162267DA30EA957E9</string>
-				<string>6638737595EAC777A4283F7C</string>
-				<string>EC4EBF870B36D8B012DD66F8</string>
-				<string>D0D3EE4B83CA397B7B8EC6D3</string>
-				<string>BE78744F7DC71B413FF17213</string>
-				<string>8E2C55F694F49B742E77456B</string>
-			</array>
-			<key>isa</key>
-			<string>PBXSourcesBuildPhase</string>
-			<key>runOnlyForDeploymentPostprocessing</key>
-			<integer>0</integer>
-		</dict>
-		<key>8A744F25FF824EB99AAB3A3E</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.c.h</string>
-			<key>path</key>
-			<string>MediaBridge.h</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>8E2C55F694F49B742E77456B</key>
-		<dict>
-			<key>fileRef</key>
-			<string>CFCD0EED2D1704C21A545A1C</string>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-		</dict>
-		<key>98D951579835D161F52EA80C</key>
-		<dict>
-			<key>fileRef</key>
-			<string>A640B272AB265113500AE658</string>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-		</dict>
-		<key>9AC3B5AD93CBC0305C62F78F</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>text.plist.xml</string>
-			<key>path</key>
-			<string>Info.plist</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>9E6A6E06AB4EEA3DD4FDF3F6</key>
-		<dict>
-			<key>fileRef</key>
-			<string>C112316C06EF1A1147A2495D</string>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-		</dict>
-		<key>A172CEDCAE47474B615C54D5</key>
+		<key>BA9672E061E889F65413913D</key>
 		<dict>
 			<key>explicitFileType</key>
 			<string>wrapper.application</string>
 			<key>isa</key>
 			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>BoraMin iOS.app</string>
 			<key>path</key>
 			<string>BoraMin.app</string>
 			<key>sourceTree</key>
 			<string>BUILT_PRODUCTS_DIR</string>
-		</dict>
-		<key>A640B272AB265113500AE658</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>BoraMinApp.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>B903B2DC7B13AEE6EA7FE932</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>Streaming.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
 		</dict>
 		<key>BC4A71180870F7945155FBB0</key>
 		<dict>
@@ -492,25 +1252,29 @@
 			<key>relativePath</key>
 			<string>vendor/AMSMB2</string>
 		</dict>
-		<key>BE78744F7DC71B413FF17213</key>
-		<dict>
-			<key>fileRef</key>
-			<string>7E44785030F02AA51D1CFECD</string>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-		</dict>
-		<key>C112316C06EF1A1147A2495D</key>
+		<key>BFAF7ACB17F29A6048C4A881</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
 			<key>path</key>
-			<string>ConnectionPreferences.swift</string>
+			<string>Player/Browser.swift</string>
 			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
+			<string>SOURCE_ROOT</string>
 		</dict>
-		<key>CFCD0EED2D1704C21A545A1C</key>
+		<key>C041F29914D4D17951D13A04</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>MacOS/MacPlayback.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>C149F867928E396D05FA3014</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
@@ -521,102 +1285,226 @@
 			<key>sourceTree</key>
 			<string>SOURCE_ROOT</string>
 		</dict>
-		<key>D0D3EE4B83CA397B7B8EC6D3</key>
+		<key>C37AA2FEE2C6BD7711284AC0</key>
 		<dict>
 			<key>fileRef</key>
-			<string>B903B2DC7B13AEE6EA7FE932</string>
+			<string>95A6DB0840F239841A7BBA31</string>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
-		<key>D794059B55BFD0BD4D54B8FE</key>
+		<key>CB4C26404F376F6FC7C5797A</key>
 		<dict>
+			<key>explicitFileType</key>
+			<string>wrapper.application</string>
 			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>productRef</key>
-			<string>DDC59701C6BDD9C44C766CEE</string>
-		</dict>
-		<key>DD75E2CB1C510A828AC72D96</key>
-		<dict>
-			<key>buildSettings</key>
-			<dict>
-				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
-				<string>AppIcon</string>
-				<key>CLANG_ENABLE_MODULES</key>
-				<string>YES</string>
-				<key>CODE_SIGN_ENTITLEMENTS</key>
-				<string>Config/BoraMin.entitlements</string>
-				<key>CODE_SIGN_STYLE</key>
-				<string>Automatic</string>
-				<key>CURRENT_PROJECT_VERSION</key>
-				<string>1</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
-				<key>ENABLE_USER_SCRIPT_SANDBOXING</key>
-				<string>YES</string>
-				<key>GCC_OPTIMIZATION_LEVEL</key>
-				<string>3</string>
-				<key>GENERATE_INFOPLIST_FILE</key>
-				<string>YES</string>
-				<key>HEADER_SEARCH_PATHS</key>
-				<array>
-					<string>$(SRCROOT)/vendor/ffmpeg/include</string>
-				</array>
-				<key>INFOPLIST_FILE</key>
-				<string>Player/Info.plist</string>
-				<key>LIBRARY_SEARCH_PATHS</key>
-				<array>
-					<string>$(SRCROOT)/vendor/ffmpeg/lib</string>
-				</array>
-				<key>MARKETING_VERSION</key>
-				<string>0.1</string>
-				<key>OTHER_LDFLAGS</key>
-				<array>
-					<string>-lavformat</string>
-					<string>-lavcodec</string>
-					<string>-lswresample</string>
-					<string>-lavutil</string>
-					<string>-framework</string>
-					<string>AudioToolbox</string>
-					<string>-framework</string>
-					<string>CoreMedia</string>
-					<string>-framework</string>
-					<string>VideoToolbox</string>
-					<string>-lz</string>
-					<string>-lbz2</string>
-					<string>-liconv</string>
-				</array>
-				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin</string>
-				<key>PRODUCT_NAME</key>
-				<string>$(TARGET_NAME)</string>
-				<key>SDKROOT</key>
-				<string>appletvos</string>
-				<key>SUPPORTED_PLATFORMS</key>
-				<string>appletvos</string>
-				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
-				<string>Player/Player-Bridging-Header.h</string>
-				<key>SWIFT_OPTIMIZATION_LEVEL</key>
-				<string>-O</string>
-				<key>SWIFT_VERSION</key>
-				<string>5.0</string>
-				<key>TARGETED_DEVICE_FAMILY</key>
-				<string>3</string>
-				<key>TVOS_DEPLOYMENT_TARGET</key>
-				<string>26.6</string>
-			</dict>
-			<key>isa</key>
-			<string>XCBuildConfiguration</string>
+			<string>PBXFileReference</string>
 			<key>name</key>
-			<string>Release</string>
+			<string>BoraMin tvOS.app</string>
+			<key>path</key>
+			<string>BoraMin.app</string>
+			<key>sourceTree</key>
+			<string>BUILT_PRODUCTS_DIR</string>
 		</dict>
-		<key>DDC59701C6BDD9C44C766CEE</key>
+		<key>D00D75AFAC051DC314560D34</key>
 		<dict>
 			<key>isa</key>
 			<string>XCSwiftPackageProductDependency</string>
 			<key>productName</key>
 			<string>AMSMB2</string>
 		</dict>
-		<key>E2A75ED5B9A5669418D1E973</key>
+		<key>D0BAEA2AE43CE8A678291F45</key>
+		<dict>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>B149C7A24184C8A1BD39F0BE</string>
+				<string>D86FBD4ECF2FA789FEB645DB</string>
+				<string>D3ABDBDAE2DFD40531551B13</string>
+				<string>255C91B62A6E49E9F5F14733</string>
+				<string>DE552DEF57127D7B7569CE41</string>
+				<string>64F1621F67E72CA428B4A737</string>
+				<string>8FE44E6C97A501CE55B5EAB7</string>
+				<string>B4F2F6D6E1194528675DAA59</string>
+				<string>F5870BFAB7FD20545C508FDC</string>
+				<string>8326FB8BC491C44C3877D29D</string>
+				<string>C37AA2FEE2C6BD7711284AC0</string>
+				<string>57D64858DC7802C1911D65C0</string>
+				<string>6DA74ED1FE1A425871EF6F43</string>
+			</array>
+			<key>isa</key>
+			<string>PBXSourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
+		</dict>
+		<key>D39763E32B387764D8AE2095</key>
+		<dict>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>3A18BF8BC232C51387709D71</string>
+			</array>
+			<key>isa</key>
+			<string>PBXResourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
+		</dict>
+		<key>D3ABDBDAE2DFD40531551B13</key>
+		<dict>
+			<key>fileRef</key>
+			<string>801F71984C7B700CD646634C</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>D3E616A9C9F7339A996A1BEB</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>iOS/BoraMinApp.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>D73DA778FF676E11CE0D974E</key>
+		<dict>
+			<key>isa</key>
+			<string>XCSwiftPackageProductDependency</string>
+			<key>productName</key>
+			<string>AMSMB2</string>
+		</dict>
+		<key>D7F05063D0F52BCD6EDCDCAE</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>folder.assetcatalog</string>
+			<key>path</key>
+			<string>MacOS/Assets.xcassets</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>D86FBD4ECF2FA789FEB645DB</key>
+		<dict>
+			<key>fileRef</key>
+			<string>FFC476E5E39A7834CA83175E</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>D9B6FA89CFD92B39EF1B237C</key>
+		<dict>
+			<key>explicitFileType</key>
+			<string>wrapper.application</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>name</key>
+			<string>BoraMin macOS.app</string>
+			<key>path</key>
+			<string>BoraMin.app</string>
+			<key>sourceTree</key>
+			<string>BUILT_PRODUCTS_DIR</string>
+		</dict>
+		<key>DE552DEF57127D7B7569CE41</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E8440AD440A4A42A51A4EBD0</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E09DF81221165803A63FCE3F</key>
+		<dict>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>864167A39F07DDDB1B61DF65</string>
+				<string>A696983643899A2FA8DA05AF</string>
+				<string>542A9558DDA10A15976E4997</string>
+				<string>0DEB104F0C59011E9E91999E</string>
+				<string>2371C0AD86A4926C86B7AA03</string>
+				<string>7B82A38E0189021F036FEC7E</string>
+				<string>90CBC478660CD39321381AAE</string>
+				<string>AF6C51E15A17BEF41CAA890E</string>
+				<string>EAE2D7A709A1659738043C3A</string>
+				<string>2F8BDEBE86336F507E353729</string>
+			</array>
+			<key>isa</key>
+			<string>PBXSourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
+		</dict>
+		<key>E3FD1C4B37766B0413851D63</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.entitlements</string>
+			<key>path</key>
+			<string>iOS/BoraMin.entitlements</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>E8440AD440A4A42A51A4EBD0</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Player/Playback.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>E8928196AB7C7122D28666B1</key>
+		<dict>
+			<key>buildConfigurations</key>
+			<array>
+				<string>85123F5DE5C7203634B81899</string>
+				<string>39B25BA2E053AA19804450D4</string>
+			</array>
+			<key>defaultConfigurationIsVisible</key>
+			<integer>0</integer>
+			<key>defaultConfigurationName</key>
+			<string>Release</string>
+			<key>isa</key>
+			<string>XCConfigurationList</string>
+		</dict>
+		<key>EAE2D7A709A1659738043C3A</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C149F867928E396D05FA3014</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>EB52ABF6F902D30BED31E845</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Player/PlaybackPositions.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>ED1D339C2F7345DB0DD72BD9</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>D3E616A9C9F7339A996A1BEB</string>
+				<string>15AF1D943EBB45813058B59D</string>
+				<string>E3FD1C4B37766B0413851D63</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>name</key>
+			<string>iOS</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>EF53A87DBEEC0376B53B62CD</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
@@ -627,36 +1515,90 @@
 			<key>sourceTree</key>
 			<string>SOURCE_ROOT</string>
 		</dict>
-		<key>E2AA269EB967A8853A258BFA</key>
+		<key>F5870BFAB7FD20545C508FDC</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C149F867928E396D05FA3014</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>F905B102B4F13BD6617D8EB3</key>
+		<dict>
+			<key>buildConfigurations</key>
+			<array>
+				<string>2B23A31EEC75B029432F2445</string>
+				<string>07CA1E69F6068DEA30A4DA6B</string>
+			</array>
+			<key>defaultConfigurationIsVisible</key>
+			<integer>0</integer>
+			<key>defaultConfigurationName</key>
+			<string>Release</string>
+			<key>isa</key>
+			<string>XCConfigurationList</string>
+		</dict>
+		<key>FB9399914FE4E505B6039AA5</key>
+		<dict>
+			<key>buildConfigurationList</key>
+			<string>BA2BE3F7F20040F88DA279BA</string>
+			<key>buildPhases</key>
+			<array>
+				<string>6E198BF27921568D95F6D61E</string>
+				<string>2DA92FE64169F9EF23399A0A</string>
+				<string>1708880747902AEFEEAD562C</string>
+			</array>
+			<key>buildRules</key>
+			<array/>
+			<key>dependencies</key>
+			<array/>
+			<key>isa</key>
+			<string>PBXNativeTarget</string>
+			<key>name</key>
+			<string>BoraMin iOS</string>
+			<key>packageProductDependencies</key>
+			<array>
+				<string>D73DA778FF676E11CE0D974E</string>
+			</array>
+			<key>productName</key>
+			<string>BoraMin</string>
+			<key>productReference</key>
+			<string>BA9672E061E889F65413913D</string>
+			<key>productType</key>
+			<string>com.apple.product-type.application</string>
+		</dict>
+		<key>FC6B20D6FAF10CB5CF569D50</key>
 		<dict>
 			<key>buildActionMask</key>
 			<integer>2147483647</integer>
 			<key>files</key>
 			<array>
-				<string>D794059B55BFD0BD4D54B8FE</string>
+				<string>3FDC2083208755B2FB34E6BD</string>
 			</array>
 			<key>isa</key>
-			<string>PBXFrameworksBuildPhase</string>
+			<string>PBXResourcesBuildPhase</string>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
 		</dict>
-		<key>EC4EBF870B36D8B012DD66F8</key>
-		<dict>
-			<key>fileRef</key>
-			<string>04A710DCD8587D2CC604D7AD</string>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-		</dict>
-		<key>F68440E510C02A3309224383</key>
+		<key>FD81068AD11CEE6191CAFB86</key>
 		<dict>
 			<key>isa</key>
 			<string>PBXFileReference</string>
 			<key>lastKnownFileType</key>
 			<string>sourcecode.swift</string>
 			<key>path</key>
-			<string>Browser.swift</string>
+			<string>Player/StreamingAudioLoader.swift</string>
 			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>FFC476E5E39A7834CA83175E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Player/ConnectionPreferences.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

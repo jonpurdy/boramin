@@ -9,3 +9,4 @@ __pycache__/
 default_*.txt
 defaults/default_*.txt
 vendor/ffmpeg-ios/
+vendor/ffmpeg-macos/

@@ -1,9 +1,12 @@
+import OSLog
 import Foundation
 import CloudKit
 import CryptoKit
 import Combine
 
-/// Shared by the TV player and iOS companion. Passwords never enter this store.
+private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iCloud")
+
+/// Shared by the tvOS, iOS and macOS apps. Passwords never enter this store.
 @MainActor final class ICloudSync: ObservableObject, CKSyncEngineDelegate {
     static let shared = ICloudSync()
     static let dataChanged = Notification.Name("BoraMinCloudDataChanged")
@@ -209,7 +212,7 @@ import Combine
         else {
             scheduled?.cancel(); scheduled=nil
             status="Off — saved on this device"
-            Task { await engine?.cancelOperations() }
+            _ = Self.engineTask { [weak self] in await self?.engine?.cancelOperations() }
         }
     }
     func activate() {
@@ -220,7 +223,7 @@ import Combine
         guard enabled, !accountBlocked else { return }
         if scheduled != nil && !urgent { return }
         scheduled?.cancel()
-        scheduled=Task { [weak self] in
+        scheduled=Self.engineTask { [weak self] in
             do { try await Task.sleep(for:.seconds(delay)) } catch { return }
             guard let self else { return }
             self.scheduled=nil
@@ -230,10 +233,17 @@ import Combine
     func synchronize() async {
         guard enabled, !accountBlocked else { return }
         if let running { await running.value; return }
-        let task=Task { await self.runSync() }
+        let task=Self.engineTask { await self.runSync() }
         running=task
         await task.value
         running=nil
+    }
+    // Tasks created while handling a CKSyncEngine event otherwise inherit its
+    // task-local delegate context, even after a sleep or a MainActor hop. Apple
+    // rejects fetch/send/cancel calls from that context. Start an independent
+    // task while keeping all access to our mutable sync state on MainActor.
+    nonisolated static func engineTask(_ operation: @escaping @MainActor @Sendable () async -> Void) -> Task<Void, Never> {
+        Task.detached { @MainActor in await operation() }
     }
     private func prepare() async throws {
         guard engine == nil else { return }
@@ -284,11 +294,11 @@ import Combine
             lastSync=Date(); defaults.set(lastSync,forKey:"cloudLastSync")
             status="Up to date"
             NotificationCenter.default.post(name:Self.dataChanged,object:nil)
-            print("BORAMIN_ICLOUD synced records=\(state.items.count) pending=\(pendingCount)")
+            cloudLog.notice("BORAMIN_ICLOUD synced records=\(self.state.items.count) pending=\(self.pendingCount)")
         } catch {
             lastFailure=error
             if enabled { status=error.localizedDescription }
-            print("BORAMIN_ICLOUD sync deferred code=\((error as NSError).code)")
+            cloudLog.error("BORAMIN_ICLOUD sync deferred code=\((error as NSError).code)")
             if enabled && !accountBlocked { schedule(delay:60) }
         }
     }

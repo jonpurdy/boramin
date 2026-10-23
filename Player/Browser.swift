@@ -1,5 +1,8 @@
+import OSLog
 import SwiftUI
 import AMSMB2
+
+private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Browser")
 
 struct BrowserEntry: Identifiable {
     var id: String { path }
@@ -7,8 +10,19 @@ struct BrowserEntry: Identifiable {
     let path: String
     let directory: Bool
     let size: Int64
+    var modified: Double = 0
+    var duration: Double? = nil
     var progress: PlaybackProgress? = nil
     var displayName: String { progress.map { "\($0.prefix) \(name)" } ?? name }
+    var durationText: String? {
+        guard let value = duration ?? progress?.duration, value.isFinite, value > 0, value < Double(Int.max) else { return nil }
+        let seconds = Int(value)
+        return seconds >= 3600 ? String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60) : String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+    var sizeAndDuration: String {
+        let sizeText = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        return durationText.map { "\($0) · \(sizeText)" } ?? sizeText
+    }
     var playable: Bool { ["mp4", "m4v", "mov", "mkv", "webm", "avi", "ts", "m2ts"].contains((name as NSString).pathExtension.lowercased()) }
 }
 
@@ -30,6 +44,7 @@ struct BrowserEntry: Identifiable {
     @Published var error: String?
     @Published var playing: PreparedMedia?
     private var client: SMB2Manager?
+    private var metadataJobs: [UUID: CancellationFlag] = [:]
     private var cancellation = CancellationFlag()
     private var operation: Task<Void, Never>?
     private var playbackDirectory: URL?
@@ -195,14 +210,16 @@ struct BrowserEntry: Identifiable {
             }
             return
         }
-        guard CommandLine.arguments.contains("--smoke-test") else { return }
+        let nativeTracks = CommandLine.arguments.contains("--native-tracks-smoke-test")
+        guard nativeTracks || CommandLine.arguments.contains("--smoke-test") else { return }
         perform("Preparing device smoke test…") { [self] in
-            let source = Bundle.main.url(forResource: "smoke", withExtension: "webm") ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("smoke.webm")
+            let source = nativeTracks ? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("native-tracks.mp4") :
+                Bundle.main.url(forResource: "smoke", withExtension: "webm") ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("smoke.webm")
             let directory = Self.cache.appendingPathComponent(UUID().uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let flag = cancellation
             let media = try await Task.detached {
-                try PreparedMedia.prepare(source: source, directory: directory, title: "VP9 hardware smoke test", cancellation: flag)
+                try PreparedMedia.prepare(source: source, directory: directory, title: "Media playback smoke test", cancellation: flag)
             }.value
             playbackDirectory = directory; playing = media
         }
@@ -259,6 +276,7 @@ struct BrowserEntry: Identifiable {
         } else { disconnect() }
     }
     func disconnect() {
+        metadataJobs.values.forEach { $0.cancel() }
         let old = client
         client = nil; connected = false; entries = []; shares = []; share = ""; path = ""
         password = ConnectionPreferences.shared.password(address: host, username: username, domain: domain) ?? ""
@@ -284,6 +302,7 @@ struct BrowserEntry: Identifiable {
             var entry = BrowserEntry(name: name, path: target.isEmpty ? name : "\(target)/\(name)",
                 directory: attributes[.fileResourceTypeKey] as? URLFileResourceType == .directory,
                 size: (attributes[.fileSizeKey] as? NSNumber)?.int64Value ?? 0)
+            entry.modified = (attributes[.contentModificationDateKey] as? Date)?.timeIntervalSince1970 ?? 0
             if !entry.directory {
                 entry.progress = progress[PlaybackPositions.key(server: client.url,
                     share: shareName ?? share, path: entry.path, size: entry.size)]
@@ -339,7 +358,7 @@ struct BrowserEntry: Identifiable {
                 throw PlayerError("This file has changed. Open it again from Files.")
             }
             let media = try await PreparedMedia.stream(client: manager, path: file.path, size: file.size,
-                title: file.name, directory: Self.cache, cancellation: flag, positionKey: file.key)
+                title: file.name, directory: Self.cache, cancellation: flag, positionKey: CommandLine.arguments.contains("--no-playback-history") ? nil : file.key)
             if flag.cancelled { media.streaming?.stop(); throw CancellationError() }
             let old = client
             client = manager; activeStream = media.streaming; playing = media
@@ -348,17 +367,36 @@ struct BrowserEntry: Identifiable {
     }
 
     private func exercisePlayerLifecycle(_ entry: BrowserEntry) async {
+        var frames = Set<UUID>()
+        let observer = NotificationCenter.default.addObserver(forName: Notification.Name("BoraMinProbeFrame"), object: nil, queue: .main) { note in
+            if let id = note.object as? UUID { frames.insert(id) }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
         do {
             for cycle in 1...3 {
                 try Task.checkCancellation()
-                play(entry)
+                var next = entry
+                if cycle == 2, let index = CommandLine.arguments.firstIndex(of: "--test-second-video"), CommandLine.arguments.count > index + 1, let client {
+                    let path = CommandLine.arguments[index + 1]
+                    let attributes = try await client.attributesOfItem(atPath: path)
+                    next = BrowserEntry(name: (path as NSString).lastPathComponent, path: path, directory: false,
+                                        size: (attributes[.fileSizeKey] as? NSNumber)?.int64Value ?? 0)
+                }
+                play(next)
                 for _ in 0..<300 {
                     if playing != nil || error != nil { break }
                     try await Task.sleep(for: .milliseconds(100))
                 }
                 guard let media = playing else { throw PlayerError(error ?? "Lifecycle test could not open video.") }
                 print("BORAMIN_LIFECYCLE opened cycle=\(cycle) id=\(media.id)")
-                try await Task.sleep(for: .seconds(10))
+                if CommandLine.arguments.contains("--probe-frames-only") {
+                    for _ in 0..<600 {
+                        if frames.contains(media.id) || error != nil { break }
+                        try await Task.sleep(for: .milliseconds(100))
+                    }
+                    guard frames.contains(media.id) else { throw PlayerError("No confirmed video in lifecycle cycle \(cycle).") }
+                    try await Task.sleep(for: .seconds(3))
+                } else { try await Task.sleep(for: .seconds(10)) }
                 guard playing?.id == media.id else { throw PlayerError("Playback was dismissed during the lifecycle test.") }
                 playing = nil
                 for _ in 0..<100 {
@@ -387,6 +425,47 @@ struct BrowserEntry: Identifiable {
         refreshProgress()
         if let directory = playbackDirectory { try? FileManager.default.removeItem(at: directory) }
         playbackDirectory = nil
+        if CommandLine.arguments.contains("--exercise-mkv-controls") { print("BORAMIN_MKV_TEST returned to browser") }
+    }
+    private static let metadataQueue = DispatchQueue(label: "BoraMin.durationProbe", qos: .utility)
+    func loadDuration(_ entry: BrowserEntry) async {
+        guard !entry.directory, entry.playable, entry.duration == nil, let client, connected else { return }
+        let currentShare = share
+        let key = PlaybackPositions.key(server: client.url, share: share, path: entry.path, size: entry.size)
+        let cacheKey = "mediaDuration." + key + "." + String(entry.modified)
+        var duration = UserDefaults.standard.double(forKey: cacheKey)
+        if duration <= 0 {
+            let flag = CancellationFlag()
+            let job = UUID()
+            metadataJobs[job] = flag
+            defer { metadataJobs.removeValue(forKey: job) }
+            duration = await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    Self.metadataQueue.async {
+                        guard !flag.cancelled else { continuation.resume(returning: 0); return }
+                        let source = SMBRemoteFile(client: client, path: entry.path, size: entry.size, cancellation: flag)
+                        var info = MediaInfo(), error = [CChar](repeating: 0, count: 512)
+                        guard let reader = media_open_io(source.makeIO(), &info, &error, error.count) else { continuation.resume(returning: 0); return }
+                        media_close(reader)
+                        continuation.resume(returning: info.duration)
+                    }
+                }
+            } onCancel: { flag.cancel() }
+        }
+        guard !Task.isCancelled, duration.isFinite, duration > 0 else { return }
+        UserDefaults.standard.set(duration, forKey: cacheKey)
+        guard self.client === client, share == currentShare,
+              let index = entries.firstIndex(where: { $0.id == entry.id && $0.size == entry.size }) else { return }
+        entries[index].duration = duration
+    }
+    func deleteFile(_ entry: BrowserEntry) {
+        guard !busy, playing == nil, !entry.directory, let client,
+              entries.contains(where: { $0.path == entry.path && !$0.directory }) else { return }
+        perform("Deleting file…", invalidateConnectionOnFailure: false) { [self] in
+            try await client.removeFile(atPath: entry.path)
+            PlaybackPositions.shared.clear(PlaybackPositions.key(server: client.url, share: share, path: entry.path, size: entry.size))
+            entries.removeAll { $0.path == entry.path }
+        }
     }
     func resetPlayback(_ entry: BrowserEntry) {
         guard !busy, playing == nil, entry.playable, let client else { return }
@@ -409,6 +488,7 @@ struct BrowserEntry: Identifiable {
     }
     private func perform(_ message: String, invalidateConnectionOnFailure: Bool = true, action: @escaping @MainActor () async throws -> Void) {
         guard !busy else { return }
+        metadataJobs.values.forEach { $0.cancel() }
         if cancellation.cancelled { cancellation = CancellationFlag() }
         busy = true; status = message; error = nil
         operation = Task {
@@ -416,7 +496,7 @@ struct BrowserEntry: Identifiable {
             do { try await action() }
             catch is CancellationError { }
             catch {
-                print("BORAMIN_ERROR \(error.localizedDescription)")
+                browserLog.error("BORAMIN_ERROR \(error.localizedDescription)")
                 let failure = error as NSError
                 let transportCodes: [Int32] = [ENOTCONN, ECONNRESET, ECONNABORTED, ENETRESET, ENOLINK,
                                                EPIPE, ETIMEDOUT, ENETDOWN, ENETUNREACH, EHOSTDOWN, EHOSTUNREACH, ECONNREFUSED]
@@ -430,6 +510,7 @@ struct BrowserEntry: Identifiable {
     }
 }
 
+#if os(tvOS) || os(iOS)
 struct BrowserScreen: View {
     private enum Destination: Hashable { case files, favorites, favoriteFiles(FavoriteLocation), watching, settings, connectionSetup }
     @StateObject private var filesBrowser = Browser()
@@ -439,6 +520,7 @@ struct BrowserScreen: View {
     @StateObject private var favorites = Favorites()
     @StateObject private var cloud = ICloudSync.shared
     @State private var navigation: [Destination] = []
+    @State private var fileToDelete: BrowserEntry?
     @AppStorage("displayAllFiles") private var displayAllFiles = false
     @AppStorage("showDebugInfo") private var showDebugInfo = false
     @Environment(\.scenePhase) private var scenePhase
@@ -533,6 +615,10 @@ struct BrowserScreen: View {
             .alert("Unable to continue", isPresented: Binding(get: { browser.error != nil }, set: { if !$0 { browser.error = nil } })) {
                 Button("OK") { browser.error = nil }
             } message: { Text(browser.error ?? "") }
+            .alert("Delete File?", isPresented: Binding(get: { fileToDelete != nil }, set: { if !$0 { fileToDelete = nil } }), presenting: fileToDelete) { entry in
+                Button("Delete", role: .destructive) { browser.deleteFile(entry); fileToDelete = nil }
+                Button("Cancel", role: .cancel) { fileToDelete = nil }
+            } message: { entry in Text("Permanently delete \(entry.name) from the server? This cannot be undone.") }
             .fullScreenCover(item: Binding(get: { browser.playing }, set: { browser.playing = $0 }), onDismiss: { browser.playbackEnded() }) { media in
                 NativePlayer(media: media) { message in
                     browser.playing = nil
@@ -619,17 +705,21 @@ struct BrowserScreen: View {
                                         Image(systemName: entry.directory ? "folder" : "film")
                                         Text(entry.displayName)
                                         Spacer()
-                                        if !entry.directory { Text(ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file)).foregroundStyle(.secondary) }
+                                        if !entry.directory { Text(entry.sizeAndDuration).foregroundStyle(.secondary) }
                                     }
                                 }.disabled(!entry.directory && !entry.playable)
+                                    .task(id: entry.id) { await browser.loadDuration(entry) }
                                     .browserDefaultFocus(entry.id == firstFocusableEntry, in: listingFocus)
                                     .contextMenu {
                                         if entry.directory { favoriteMenu(browser.favoriteLocation(path: entry.path)) }
-                                        else if entry.playable {
+                                        else {
+                                            Button("Delete File…", systemImage: "trash", role: .destructive) { fileToDelete = entry }
+                                        if entry.playable {
                                             Button("Reset playback", systemImage: "arrow.counterclockwise") {
                                                 browser.resetPlayback(entry)
                                             }
                                             .disabled(entry.progress == nil)
+                                        }
                                         }
                                     }
                             }
@@ -751,6 +841,9 @@ struct BrowserScreen: View {
                             Image(systemName: "film")
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("\(video.progress.prefix) \(video.file?.name ?? "Saved video · \(video.id.prefix(6))")")
+                                if let file = video.file {
+                                    Text(BrowserEntry(name: file.name, path: file.path, directory: false, size: file.size, duration: video.progress.duration).sizeAndDuration).font(.caption).foregroundStyle(.secondary)
+                                }
                                 Text(video.file?.location ?? "Open this video's folder in Files to recover its name and location.")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
@@ -871,3 +964,5 @@ private extension View {
         #endif
     }
 }
+
+#endif

@@ -1,12 +1,83 @@
+import AudioToolbox
+import OSLog
 import AVKit
 import SwiftUI
 import VideoToolbox
 import AMSMB2
 
+private let playbackLog = Logger(subsystem: "com.example.BoraMin", category: "Playback")
+
 struct PlayerError: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
+}
+
+/// Select through AVFoundation; AVKit continues to own the audio menu.
+@MainActor enum NativeAudioSelection {
+    static func decoderIDs() -> Set<AudioFormatID> {
+        var size: UInt32 = 0
+        guard AudioFormatGetPropertyInfo(kAudioFormatProperty_DecodeFormatIDs, 0, nil, &size) == noErr else { return [] }
+        var ids = [AudioFormatID](repeating: 0, count: Int(size) / MemoryLayout<AudioFormatID>.size)
+        let status = ids.withUnsafeMutableBytes { AudioFormatGetProperty(kAudioFormatProperty_DecodeFormatIDs, 0, nil, &size, $0.baseAddress!) }
+        return status == noErr ? Set(ids) : []
+    }
+    static func selectFirstSupported(in item: AVPlayerItem) async throws {
+        let tracks = try await item.asset.loadTracks(withMediaType: .audio)
+        guard !tracks.isEmpty else { return } // Silent video is valid.
+        let decoders = decoderIDs()
+        guard !decoders.isEmpty else { throw PlayerError("Unable to determine supported audio formats on this device.") }
+        if let group = try await item.asset.loadMediaSelectionGroup(for: .audible) {
+            let playable = AVMediaSelectionGroup.playableMediaSelectionOptions(from: group.options)
+            if let option = playable.first(where: { option in
+                option.mediaSubTypes.contains { decoders.contains($0.uint32Value) }
+            }) {
+                item.select(option, in: group)
+                playbackLog.notice("Selected supported audio codec=\(option.mediaSubTypes.first?.uint32Value ?? 0)")
+                return
+            }
+        } else {
+            // Single-track assets may not expose a selection group.
+            for track in tracks {
+                let formats = try await track.load(.formatDescriptions)
+                if formats.contains(where: { decoders.contains(CMFormatDescriptionGetMediaSubType($0)) }) { return }
+            }
+        }
+        throw PlayerError("None of this video's audio tracks are supported on this device.")
+    }
+}
+
+/// Sample only while the debug overlay is visible. CPU 100% means one core.
+@MainActor final class PlaybackDebugStats {
+    private var previousCPU: Double?
+    private var previousTime: Double?
+    private var frames = "Frames (dropped/total): Unavailable"
+    private var loading = false
+    func lines(item: AVPlayerItem?, video: HardwareVideo?) -> [String] {
+        let now = ProcessInfo.processInfo.systemUptime
+        let cpu = media_process_cpu_seconds()
+        var cpuText = "CPU (app): Unavailable"
+        if cpu >= 0, let old = previousCPU, let time = previousTime, now > time, cpu >= old {
+            cpuText = String(format: "CPU (app): %.1f%%", (cpu - old) / (now - time) * 100)
+        }
+        previousCPU = cpu >= 0 ? cpu : nil; previousTime = now
+        if let video {
+            if !loading {
+                loading = true
+                video.layer.sampleBufferRenderer.loadVideoPerformanceMetrics { [weak self] metrics in
+                    let text = metrics.map { "Frames (dropped/total): \($0.numberOfDroppedFrames)/\($0.totalNumberOfFrames)" } ?? "Frames (dropped/total): Unavailable"
+                    Task { @MainActor [weak self] in self?.frames = text; self?.loading = false }
+                }
+            }
+        } else {
+            let events = item?.accessLog()?.events ?? []
+            let values = events.map(\.numberOfDroppedVideoFrames)
+            let dropped = !values.isEmpty && values.allSatisfy { $0 >= 0 } ? String(values.reduce(0, +)) : "Unavailable"
+            frames = "Frames (dropped/total): \(dropped)/Unavailable"
+        }
+        let bytes = media_process_resident_bytes()
+        return [frames, cpuText, bytes > 0 ? String(format: "Memory (app): %.1f MiB", Double(bytes) / 1048576) : "Memory (app): Unavailable"]
+    }
 }
 
 final class CancellationFlag: @unchecked Sendable {
@@ -32,19 +103,21 @@ final class PreparedMedia: Identifiable {
     let title: String
     let source: URL
     let timeline: URL
-    let vp9: Bool
+    let usesSampleBufferVideo: Bool
     let directory: URL
     let info: MediaInfo
     let streaming: StreamingSession?
     let keyframes: [Double]
     let positionKey: String?
+    let videoFormat: CMVideoFormatDescription?
 
-    init(title: String, source: URL, timeline: URL, vp9: Bool, directory: URL,
-         info: MediaInfo, streaming: StreamingSession?, keyframes: [Double], positionKey: String? = nil) {
+    init(title: String, source: URL, timeline: URL, usesSampleBufferVideo: Bool, directory: URL,
+         info: MediaInfo, streaming: StreamingSession?, keyframes: [Double], positionKey: String? = nil, videoFormat: CMVideoFormatDescription? = nil) {
         self.title = title; self.source = source; self.timeline = timeline
-        self.vp9 = vp9; self.directory = directory; self.info = info
+        self.usesSampleBufferVideo = usesSampleBufferVideo; self.directory = directory; self.info = info
         self.streaming = streaming; self.keyframes = keyframes
         self.positionKey = positionKey
+        self.videoFormat = videoFormat
     }
 
     static func indexedKeyframes(_ reader: OpaquePointer) -> [Double] {
@@ -54,8 +127,36 @@ final class PreparedMedia: Identifiable {
         guard media_keyframes(reader, &times, count) == count else { return [] }
         return times
     }
+    static func configuration(_ reader: OpaquePointer) throws -> Data {
+        var bytes: UnsafePointer<UInt8>?
+        let count = media_video_configuration(reader, &bytes)
+        guard count >= 0 else { throw PlayerError("Invalid video decoder configuration.") }
+        guard count > 0, let bytes else { return Data() }
+        return Data(bytes: bytes, count: Int(count))
+    }
+    static func needsDemuxedPlayback(_ info: MediaInfo, fileExtension: String) -> Bool {
+        info.vp9 != 0 || ["mkv", "webm"].contains(fileExtension.lowercased())
+    }
+    @discardableResult static func validateDecoder(_ info: MediaInfo, configuration: Data) throws -> CMVideoFormatDescription {
+        let format = try HardwareVideo.makeFormat(info, configuration: configuration)
+        if info.vp9 != 0 {
+            let session = try HardwareVideo.makeSession(format)
+            VTDecompressionSessionInvalidate(session)
+        } else {
+            if info.codec_type == kCMVideoCodecType_AV1 {
+                if #available(iOS 26.2, macOS 11.0, tvOS 26.2, *) {
+                    VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_AV1)
+                }
+            }
+            var session: VTDecompressionSession?
+            try HardwareVideo.check(VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: format,
+                decoderSpecification: nil, imageBufferAttributes: nil, outputCallback: nil, decompressionSessionOut: &session), "Open system video decoder")
+            if let session { VTDecompressionSessionInvalidate(session) }
+        }
+        return format
+    }
     func seekTime(_ requested: Double) -> Double {
-        guard vp9, requested.isFinite, !keyframes.isEmpty else { return requested }
+        guard usesSampleBufferVideo, requested.isFinite, !keyframes.isEmpty else { return requested }
         var lower = 0, upper = keyframes.count
         while lower < upper {
             let middle = (lower + upper) / 2
@@ -69,28 +170,32 @@ final class PreparedMedia: Identifiable {
     static func stream(client: SMB2Manager, path: String, size: Int64, title: String, directory: URL, cancellation: CancellationFlag, positionKey: String? = nil) async throws -> Self {
         guard size > 0 else { throw PlayerError("This SMB file is empty or its size is unavailable.") }
         let source = SMBRemoteFile(client: client, path: path, size: size, cancellation: cancellation)
+        let ext = (path as NSString).pathExtension
         let transport = try StreamingSession(source: source, fileExtension: (path as NSString).pathExtension)
         do {
             try await transport.start()
-            let (info, keyframes) = try await Task.detached(priority: .userInitiated) {
+            let (info, keyframes, format) = try await Task.detached(priority: .userInitiated) {
                 var info = MediaInfo(), error = [CChar](repeating: 0, count: 512)
                 guard let reader = media_open_io(source.makeIO(), &info, &error, error.count) else {
                     if cancellation.cancelled { throw CancellationError() }
                     throw PlayerError("Read streaming media: \(String(cString: error))")
                 }
-                let keyframes = info.vp9 != 0 ? indexedKeyframes(reader) : []
-                media_close(reader)
-                if info.vp9 != 0 {
-                    let session = try HardwareVideo.makeSession(HardwareVideo.makeFormat(info))
-                    VTDecompressionSessionInvalidate(session)
-                }
-                return (info, keyframes)
+                defer { media_close(reader) }
+                let demuxed = needsDemuxedPlayback(info, fileExtension: ext)
+                let format = demuxed && !(info.vp9 != 0 && CommandLine.arguments.contains("--experimental-vp9-remux")) ? try validateDecoder(info, configuration: configuration(reader)) : nil
+                let keyframes = demuxed ? indexedKeyframes(reader) : []
+                return (info, keyframes, format)
             }.value
             if cancellation.cancelled { throw CancellationError() }
-            if info.vp9 != 0 { try transport.configureAudio(duration: info.duration) }
-            print("BORAMIN_STREAM ready; fetched \(source.fetchedBytes) of \(size) bytes before playback")
-            return Self(title: title, source: transport.sourceURL, timeline: info.vp9 != 0 ? transport.audioURL : transport.sourceURL,
-                vp9: info.vp9 != 0, directory: directory, info: info, streaming: transport, keyframes: keyframes, positionKey: positionKey)
+            let demuxed = needsDemuxedPlayback(info, fileExtension: ext)
+            let experimental = CommandLine.arguments.contains("--experimental-vp9-remux") && info.vp9 != 0
+            if experimental {
+                try transport.configureExperimentalRemux(info: info, keyframes: keyframes)
+                playbackLog.notice("BORAMIN_REMUX opt-in native HLS; decoder HW/SW unknown")
+            } else if demuxed { try transport.configureAudio(duration: info.duration) }
+            playbackLog.notice("BORAMIN_STREAM ready; fetched \(source.fetchedBytes) of \(size) bytes before playback")
+            return Self(title: title, source: transport.sourceURL, timeline: experimental ? transport.experimentalRemuxURL : demuxed ? transport.audioURL : transport.sourceURL,
+                usesSampleBufferVideo: demuxed && !experimental, directory: directory, info: info, streaming: transport, keyframes: keyframes, positionKey: positionKey, videoFormat: format)
         } catch {
             let userCancelled = cancellation.cancelled
             transport.stop()
@@ -104,18 +209,17 @@ final class PreparedMedia: Identifiable {
         guard let reader = media_open(source.path, &info, &error, error.count) else {
             throw PlayerError("Read media: \(String(cString: error))")
         }
-        let keyframes = info.vp9 != 0 ? indexedKeyframes(reader) : []
-        media_close(reader)
-        if info.vp9 == 0 { return Self(title: title, source: source, timeline: source, vp9: false, directory: directory, info: info, streaming: nil, keyframes: []) }
+        defer { media_close(reader) }
+        let demuxed = needsDemuxedPlayback(info, fileExtension: source.pathExtension)
+        let keyframes = demuxed ? indexedKeyframes(reader) : []
+        if !demuxed { return Self(title: title, source: source, timeline: source, usesSampleBufferVideo: false, directory: directory, info: info, streaming: nil, keyframes: []) }
         // Fail before the lengthy audio preparation if this device cannot decode the source profile.
-        let format = try HardwareVideo.makeFormat(info)
-        let session = try HardwareVideo.makeSession(format)
-        VTDecompressionSessionInvalidate(session)
-        guard info.duration.isFinite, info.duration > 0 else { throw PlayerError("This VP9 file has no usable duration.") }
+        let format = try validateDecoder(info, configuration: configuration(reader))
+        guard info.duration.isFinite, info.duration > 0 else { throw PlayerError("This file has no usable duration.") }
         let values = try directory.resourceValues(forKeys: [.volumeAvailableCapacityKey])
         let required = info.duration * 48_000 * 4 + 64 * 1_024 * 1_024
         guard Double(values.volumeAvailableCapacity ?? 0) > required else {
-            throw PlayerError("VP9 audio preparation needs about \(ByteCountFormatter.string(fromByteCount: Int64(required), countStyle: .file)) of free temporary storage.")
+            throw PlayerError("Audio preparation needs about \(ByteCountFormatter.string(fromByteCount: Int64(required), countStyle: .file)) of free temporary storage.")
         }
         let audio = directory.appendingPathComponent("timeline.caf")
         let status = media_audio(source.path, audio.path, { context in
@@ -124,14 +228,115 @@ final class PreparedMedia: Identifiable {
         }, Unmanaged.passUnretained(cancellation).toOpaque(), &error, error.count)
         if cancellation.cancelled { throw CancellationError() }
         guard status == 0 else { throw PlayerError("Prepare audio: \(String(cString: error))") }
-        return Self(title: title, source: source, timeline: audio, vp9: true, directory: directory, info: info, streaming: nil, keyframes: keyframes)
+        return Self(title: title, source: source, timeline: audio, usesSampleBufferVideo: true, directory: directory, info: info, streaming: nil, keyframes: keyframes, videoFormat: format)
+    }
+}
+
+/// CoreMedia format descriptions for codecs carried by Matroska. No pixel decoding in FFmpeg.
+enum NativeVideoFormat {
+    static func colorExtensions(_ info: MediaInfo) -> [CFString: Any] {
+        var ext: [CFString: Any] = [:]
+        if info.primaries == 9 { ext[kCMFormatDescriptionExtension_ColorPrimaries] = kCVImageBufferColorPrimaries_ITU_R_2020 }
+        else if info.primaries == 1 { ext[kCMFormatDescriptionExtension_ColorPrimaries] = kCVImageBufferColorPrimaries_ITU_R_709_2 }
+        if info.transfer == 16 { ext[kCMFormatDescriptionExtension_TransferFunction] = kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ }
+        else if info.transfer == 18 { ext[kCMFormatDescriptionExtension_TransferFunction] = kCVImageBufferTransferFunction_ITU_R_2100_HLG }
+        else if info.transfer == 1 { ext[kCMFormatDescriptionExtension_TransferFunction] = kCVImageBufferTransferFunction_ITU_R_709_2 }
+        if info.matrix == 9 { ext[kCMFormatDescriptionExtension_YCbCrMatrix] = kCVImageBufferYCbCrMatrix_ITU_R_2020 }
+        else if info.matrix == 1 { ext[kCMFormatDescriptionExtension_YCbCrMatrix] = kCVImageBufferYCbCrMatrix_ITU_R_709_2 }
+        var copy = info
+        if info.has_mastering != 0 { ext[kCMFormatDescriptionExtension_MasteringDisplayColorVolume] = withUnsafeBytes(of: &copy.mastering) { Data($0) } }
+        if info.has_light != 0 { ext[kCMFormatDescriptionExtension_ContentLightLevelInfo] = withUnsafeBytes(of: &copy.light) { Data($0) } }
+        return ext
+    }
+    static func make(_ info: MediaInfo, configuration: Data) throws -> CMVideoFormatDescription {
+        guard info.codec_type != 0 else { throw PlayerError("This MKV video codec has no supported system decoder integration.") }
+        let ext = colorExtensions(info)
+        if info.codec_type == kCMVideoCodecType_H264 || info.codec_type == kCMVideoCodecType_HEVC {
+            return try parameterSetFormat(info.codec_type, configuration: configuration, extensions: ext)
+        }
+        var extensions = ext
+        if info.codec_type == kCMVideoCodecType_AV1 {
+            guard configuration.count >= 4, configuration[0] == 0x81 else { throw PlayerError("Invalid AV1 codec configuration.") }
+            extensions[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] = ["av1C": configuration]
+        } else if info.codec_type == kCMVideoCodecType_MPEG4Video {
+            guard !configuration.isEmpty else { throw PlayerError("MPEG-4 video configuration is missing.") }
+            func descriptor(_ tag: UInt8, _ payload: [UInt8]) -> [UInt8] {
+                let n = payload.count
+                return [tag, UInt8((n >> 21) & 127) | 128, UInt8((n >> 14) & 127) | 128,
+                        UInt8((n >> 7) & 127) | 128, UInt8(n & 127)] + payload
+            }
+            let config = descriptor(4, [0x20, 0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] + descriptor(5, Array(configuration)))
+            let esds = [UInt8](repeating: 0, count: 4) + descriptor(3, [0, 1, 0] + config + descriptor(6, [2]))
+            extensions[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] = ["esds": Data(esds)]
+        } else if info.codec_type == 0x76703038 { // vp08
+            extensions[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] = ["vpcC": Data([1,0,0,0,0,10,0x82,2,2,2,0,0])]
+        }
+        var format: CMVideoFormatDescription?
+        try HardwareVideo.check(CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: info.codec_type,
+            width: info.width, height: info.height, extensions: extensions as CFDictionary, formatDescriptionOut: &format), "Create system video format")
+        guard let format else { throw PlayerError("No system video format returned.") }
+        return format
+    }
+    private static func parameterSetFormat(_ codec: CMVideoCodecType, configuration: Data, extensions: [CFString: Any]) throws -> CMVideoFormatDescription {
+        let bytes = Array(configuration)
+        var offset = 0, ranges: [Range<Int>] = []
+        func byte() throws -> Int {
+            guard offset < bytes.count else { throw PlayerError("Truncated video codec configuration.") }
+            defer { offset += 1 }; return Int(bytes[offset])
+        }
+        func word() throws -> Int { let high = try byte(); return try (high << 8) | byte() }
+        func nal(keep: Bool = true) throws {
+            let size = try word()
+            guard size > 0, size <= bytes.count - offset else { throw PlayerError("Invalid video parameter set length.") }
+            if keep { ranges.append(offset..<offset + size) }
+            offset += size
+        }
+        guard try byte() == 1 else { throw PlayerError("Unsupported video codec configuration version.") }
+        let length: Int
+        if codec == kCMVideoCodecType_H264 {
+            offset = 4; length = try (byte() & 3) + 1
+            let spsCount = try byte() & 31
+            for _ in 0..<spsCount { try nal() }
+            let ppsCount = try byte()
+            for _ in 0..<ppsCount { try nal() }
+        } else {
+            offset = 21; length = try (byte() & 3) + 1
+            let arrays = try byte()
+            for _ in 0..<arrays {
+                let type = try byte() & 63
+                let count = try word()
+                for _ in 0..<count { try nal(keep: [32, 33, 34].contains(type)) }
+            }
+        }
+        guard [1, 2, 4].contains(length), !ranges.isEmpty else { throw PlayerError("Video parameter sets are missing or invalid.") }
+        return try configuration.withUnsafeBytes { storage in
+            let base = storage.bindMemory(to: UInt8.self).baseAddress!
+            let pointers = ranges.map { base.advanced(by: $0.lowerBound) }
+            let sizes = ranges.map(\.count)
+            var format: CMVideoFormatDescription?
+            let status = pointers.withUnsafeBufferPointer { pointers in
+                sizes.withUnsafeBufferPointer { sizes in
+                    if codec == kCMVideoCodecType_H264 {
+                        return CMVideoFormatDescriptionCreateFromH264ParameterSets(allocator: kCFAllocatorDefault,
+                            parameterSetCount: pointers.count, parameterSetPointers: pointers.baseAddress!, parameterSetSizes: sizes.baseAddress!,
+                            nalUnitHeaderLength: Int32(length), formatDescriptionOut: &format)
+                    }
+                    return CMVideoFormatDescriptionCreateFromHEVCParameterSets(allocator: kCFAllocatorDefault,
+                        parameterSetCount: pointers.count, parameterSetPointers: pointers.baseAddress!, parameterSetSizes: sizes.baseAddress!,
+                        nalUnitHeaderLength: Int32(length), extensions: extensions as CFDictionary, formatDescriptionOut: &format)
+                }
+            }
+            try HardwareVideo.check(status, "Create H.264/HEVC video format")
+            guard let format else { throw PlayerError("No H.264/HEVC format returned.") }
+            return format
+        }
     }
 }
 
 /// Video uses the AVPlayer item's timebase, so native pause, seek and rate changes drive both tracks.
 final class HardwareVideo: @unchecked Sendable {
     let layer = AVSampleBufferDisplayLayer()
-    private let queue = DispatchQueue(label: "BoraMin.VP9", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "BoraMin.Video", qos: .userInitiated)
     private let lock = NSLock()
     private var stopped = false
     private var revision = 0
@@ -145,6 +350,21 @@ final class HardwareVideo: @unchecked Sendable {
     var firstFrame: (() -> Void)?
 
     init(path: String, remote: SMBRemoteFile? = nil) { self.path = path; self.remote = remote; layer.videoGravity = .resizeAspect }
+    func logPerformance(sessionID: UUID) {
+        let session = sessionID.uuidString
+        let queued = queuedTime
+        let clock = layer.controlTimebase.map { CMTimebaseGetTime($0).seconds } ?? 0
+        let renderer = layer.sampleBufferRenderer
+        let status = renderer.status.rawValue
+        let ready = renderer.isReadyForMoreMediaData
+        renderer.loadVideoPerformanceMetrics { metrics in
+            guard let metrics else {
+                playbackLog.info("Video metrics unavailable session=\(session, privacy: .public) renderer=\(status)")
+                return
+            }
+            playbackLog.notice("Video metrics session=\(session, privacy: .public) frames=\(metrics.totalNumberOfFrames) dropped=\(metrics.numberOfDroppedFrames) corrupted=\(metrics.numberOfCorruptedFrames) accumulatedDelaySeconds=\(metrics.totalAccumulatedFrameDelay) optimizedFrames=\(metrics.numberOfFramesDisplayedUsingOptimizedCompositing) queuedPTS=\(queued) clock=\(clock) renderer=\(status) readyForMore=\(ready)")
+        }
+    }
     func start(timebase: CMTimebase) {
         layer.controlTimebase = timebase
         queue.async { [self] in
@@ -177,9 +397,13 @@ final class HardwareVideo: @unchecked Sendable {
         return (revision, seekTime)
     }
     static func check(_ status: OSStatus, _ action: String) throws {
-        if status != noErr { throw PlayerError("\(action): OSStatus \(status)") }
+        if status != noErr {
+            playbackLog.error("Decoder operation failed action=\(action, privacy: .public) OSStatus=\(status)")
+            throw PlayerError("\(action): OSStatus \(status)")
+        }
     }
-    static func makeFormat(_ info: MediaInfo) throws -> CMVideoFormatDescription {
+    static func makeFormat(_ info: MediaInfo, configuration: Data = Data()) throws -> CMVideoFormatDescription {
+        if info.vp9 == 0 { return try NativeVideoFormat.make(info, configuration: configuration) }
         guard ((info.profile == 0 && info.bit_depth == 8) || (info.profile == 2 && info.bit_depth == 10)),
               info.chroma == 0 || info.chroma == 1 else {
             throw PlayerError("MVP VP9 playback supports 8-bit Profile 0 and 10-bit Profile 2, 4:2:0.")
@@ -188,17 +412,8 @@ final class HardwareVideo: @unchecked Sendable {
         let vpcc: [UInt8] = [1, 0, 0, 0, UInt8(info.profile), UInt8(info.level),
             UInt8(info.bit_depth << 4 | info.chroma << 1 | info.full_range), UInt8(info.primaries),
             UInt8(info.transfer), UInt8(info.matrix), 0, 0]
-        var ext: [CFString: Any] = [kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms: ["vpcC": Data(vpcc)]]
-        if info.primaries == 9 { ext[kCMFormatDescriptionExtension_ColorPrimaries] = kCVImageBufferColorPrimaries_ITU_R_2020 }
-        else if info.primaries == 1 { ext[kCMFormatDescriptionExtension_ColorPrimaries] = kCVImageBufferColorPrimaries_ITU_R_709_2 }
-        if info.transfer == 16 { ext[kCMFormatDescriptionExtension_TransferFunction] = kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ }
-        else if info.transfer == 18 { ext[kCMFormatDescriptionExtension_TransferFunction] = kCVImageBufferTransferFunction_ITU_R_2100_HLG }
-        else if info.transfer == 1 { ext[kCMFormatDescriptionExtension_TransferFunction] = kCVImageBufferTransferFunction_ITU_R_709_2 }
-        if info.matrix == 9 { ext[kCMFormatDescriptionExtension_YCbCrMatrix] = kCVImageBufferYCbCrMatrix_ITU_R_2020 }
-        else if info.matrix == 1 { ext[kCMFormatDescriptionExtension_YCbCrMatrix] = kCVImageBufferYCbCrMatrix_ITU_R_709_2 }
-        var copy = info
-        if info.has_mastering != 0 { ext[kCMFormatDescriptionExtension_MasteringDisplayColorVolume] = withUnsafeBytes(of: &copy.mastering) { Data($0) } }
-        if info.has_light != 0 { ext[kCMFormatDescriptionExtension_ContentLightLevelInfo] = withUnsafeBytes(of: &copy.light) { Data($0) } }
+        var ext = NativeVideoFormat.colorExtensions(info)
+        ext[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] = ["vpcC": Data(vpcc)]
         var format: CMVideoFormatDescription?
         try check(CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: kCMVideoCodecType_VP9,
             width: info.width, height: info.height, extensions: ext as CFDictionary, formatDescriptionOut: &format), "Create VP9 format")
@@ -230,7 +445,7 @@ final class HardwareVideo: @unchecked Sendable {
             VTDecompressionSessionInvalidate(session)
             throw PlayerError("VP9 hardware decoding was not confirmed on this device.")
         }
-        print("BORAMIN_VP9 hardware confirmed")
+        playbackLog.notice("BORAMIN_VP9 hardware confirmed")
         return session
     }
     private func run() throws {
@@ -238,8 +453,12 @@ final class HardwareVideo: @unchecked Sendable {
         let opened = remote.map { media_open_io($0.makeIO(), &info, &error, error.count) } ?? media_open(path, &info, &error, error.count)
         guard let reader = opened else { throw PlayerError(String(cString: error)) }
         defer { media_close(reader) }
-        let format = try Self.makeFormat(info)
-        print("BORAMIN_VP9 format profile=\(info.profile) depth=\(info.bit_depth) level=\(info.level) \(info.width)x\(info.height)")
+        let format = try Self.makeFormat(info, configuration: PreparedMedia.configuration(reader))
+        if info.vp9 == 0 {
+            try runSystemVideo(reader: reader, info: info, format: format)
+            return
+        }
+        playbackLog.notice("BORAMIN_VP9 format profile=\(info.profile) depth=\(info.bit_depth) level=\(info.level) \(info.width)x\(info.height)")
         var session = try Self.makeSession(format)
         defer { VTDecompressionSessionInvalidate(session) }
         var activeRevision = 0
@@ -269,7 +488,7 @@ final class HardwareVideo: @unchecked Sendable {
                 session = try Self.makeSession(format)
                 layer.sampleBufferRenderer.flush(removingDisplayedImage: false)
                 guard media_seek(reader, target) >= 0 else { throw PlayerError("Cannot seek in this VP9 file.") }
-                print("BORAMIN_VP9 seek \(target)s")
+                playbackLog.notice("BORAMIN_VP9 seek \(target)s")
                 activeRevision = revision
             }
             var bytes: UnsafePointer<UInt8>?, count: Int32 = 0, key: Int32 = 0
@@ -278,7 +497,7 @@ final class HardwareVideo: @unchecked Sendable {
             if result < 0 { throw PlayerError("Read VP9 packet: FFmpeg \(result)") }
             if result == 0 {
                 try Self.check(VTDecompressionSessionFinishDelayedFrames(session), "Drain VP9")
-                print("BORAMIN_VP9 reached EOF; decoded \(decoded), queued \(queued) hardware-decoded frames")
+                playbackLog.notice("BORAMIN_VP9 reached EOF; decoded \(decoded), queued \(queued) hardware-decoded frames")
                 while try state().0 == activeRevision { Thread.sleep(forTimeInterval: 0.02) }
                 continue
             }
@@ -309,9 +528,9 @@ final class HardwareVideo: @unchecked Sendable {
                         guard let image, try state().0 == activeRevision else { return }
                         decoded += 1
                         if decoded % 300 == 0 {
-                            print("BORAMIN_VP9 decoded=\(decoded) pts=\(timestamp.seconds)")
+                            playbackLog.debug("BORAMIN_VP9 decoded=\(decoded) pts=\(timestamp.seconds)")
                             if CommandLine.arguments.contains("--vp9-diagnostics") {
-                                print("BORAMIN_VP9_DECODE elapsed=\(ProcessInfo.processInfo.systemUptime - diagnosticStarted) decoded=\(decoded) queued=\(queued) late=\(late)")
+                                playbackLog.debug("BORAMIN_VP9_DECODE elapsed=\(ProcessInfo.processInfo.systemUptime - diagnosticStarted) decoded=\(decoded) queued=\(queued) late=\(late)")
                             }
                         }
                         let now = layer.controlTimebase.map { CMTimebaseGetTime($0).seconds } ?? 0
@@ -354,6 +573,106 @@ final class HardwareVideo: @unchecked Sendable {
             }
         }
     }
+
+    /// Let Apple's renderer decode compressed samples and reorder B-frames by their timestamps.
+    private func runSystemVideo(reader: OpaquePointer, info: MediaInfo, format: CMVideoFormatDescription) throws {
+        let renderer = layer.sampleBufferRenderer
+        var activeRevision = 0, submitted = 0
+        var announced = false
+        var previousClock: (time: Double, host: Double, rate: Double)?
+        func observeClock() -> (time: Double, jumped: Bool) {
+            let time = layer.controlTimebase.map { CMTimebaseGetTime($0).seconds } ?? 0
+            let host = ProcessInfo.processInfo.systemUptime
+            let rate = layer.controlTimebase.map { CMTimebaseGetRate($0) } ?? 0
+            let previous = previousClock
+            previousClock = (time, host, rate)
+            let jumped = previous.map { abs(time - $0.time - (host - $0.host) * $0.rate) > 1 } ?? false
+            return (time, jumped)
+        }
+        func checkRenderer() throws {
+            if renderer.status == .failed { throw renderer.error ?? PlayerError("System video renderer failed.") }
+            if !announced, renderer.status == .rendering {
+                announced = true
+                DispatchQueue.main.async { [weak self] in self?.firstFrame?() }
+            }
+        }
+        playbackLog.notice("BORAMIN_VIDEO system decoder codec=\(info.codec_type) \(info.width)x\(info.height)")
+        while true {
+            let (revision, target) = try state()
+            let clock = observeClock(), current = clock.time
+            if revision == activeRevision, clock.jumped {
+                seek(to: current); continue
+            }
+            if revision != activeRevision {
+                let flushed = DispatchSemaphore(value: 0)
+                renderer.flush(removingDisplayedImage: false) { flushed.signal() }
+                while flushed.wait(timeout: .now() + 0.1) == .timedOut { _ = try state() }
+                guard media_seek(reader, target) >= 0 else { throw PlayerError("Cannot seek in this file.") }
+                activeRevision = revision
+                lock.lock(); outputTime = -1; lock.unlock()
+                playbackLog.notice("BORAMIN_VIDEO seek \(target)s")
+            }
+            try checkRenderer()
+            var bytes: UnsafePointer<UInt8>?, count: Int32 = 0, key: Int32 = 0
+            var pts = 0.0, duration = 0.0
+            let result = media_packet(reader, &bytes, &count, &pts, &duration, &key)
+            if result < 0 { throw PlayerError("Read video packet: FFmpeg \(result)") }
+            if result == 0 {
+                var marker: CMSampleBuffer?
+                try Self.check(CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: nil,
+                    formatDescription: format, sampleCount: 0, sampleTimingEntryCount: 0, sampleTimingArray: nil,
+                    sampleSizeEntryCount: 0, sampleSizeArray: nil, sampleBufferOut: &marker), "Create video end marker")
+                if let marker {
+                    CMSetAttachment(marker, key: kCMSampleBufferAttachmentKey_DrainAfterDecoding, value: kCFBooleanTrue, attachmentMode: kCMAttachmentMode_ShouldNotPropagate)
+                    renderer.enqueue(marker)
+                }
+                playbackLog.notice("BORAMIN_VIDEO reached EOF; submitted \(submitted) compressed frames")
+                while try state().0 == activeRevision { try checkRenderer(); Thread.sleep(forTimeInterval: 0.02) }
+                continue
+            }
+            let dts = media_packet_dts(reader)
+            // Decode order can differ from presentation order. Never discard late compressed
+            // reference frames, and allow the renderer enough look-ahead for reordered frames.
+            let decodeTime = dts.isFinite ? dts : pts
+            while decodeTime > (layer.controlTimebase.map { CMTimebaseGetTime($0).seconds } ?? current) + 1 || !renderer.isReadyForMoreMediaData {
+                if try state().0 != activeRevision { break }
+                // Observe rate changes even while waiting for the paused queue to drain.
+                // Otherwise a pause/resume could be mistaken for a seek discontinuity.
+                let clock = observeClock()
+                if clock.jumped { seek(to: clock.time); break }
+                try checkRenderer()
+                Thread.sleep(forTimeInterval: 0.003)
+            }
+            if try state().0 != activeRevision { continue }
+            try autoreleasepool {
+                guard count > 0, let bytes else { throw PlayerError("Empty compressed video packet.") }
+                var block: CMBlockBuffer?
+                try Self.check(CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil,
+                    blockLength: Int(count), blockAllocator: kCFAllocatorDefault, customBlockSource: nil,
+                    offsetToData: 0, dataLength: Int(count), flags: 0, blockBufferOut: &block), "Allocate video packet")
+                guard let block else { throw PlayerError("No video packet buffer.") }
+                try Self.check(CMBlockBufferReplaceDataBytes(with: bytes, blockBuffer: block, offsetIntoDestination: 0, dataLength: Int(count)), "Copy video packet")
+                var timing = CMSampleTimingInfo(duration: CMTime(seconds: duration > 0 ? duration : 1 / max(1, info.frame_rate), preferredTimescale: 60000),
+                    presentationTimeStamp: CMTime(seconds: pts, preferredTimescale: 60000),
+                    decodeTimeStamp: dts.isFinite ? CMTime(seconds: dts, preferredTimescale: 60000) : .invalid)
+                var size = Int(count), sample: CMSampleBuffer?
+                try Self.check(CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format,
+                    sampleCount: 1, sampleTimingEntryCount: 1, sampleTimingArray: &timing,
+                    sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample), "Create compressed video sample")
+                guard let sample, let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true) else { throw PlayerError("No video sample attachments.") }
+                let dictionary = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+                CFDictionarySetValue(dictionary, Unmanaged.passUnretained(kCMSampleAttachmentKey_NotSync).toOpaque(),
+                    Unmanaged.passUnretained(key != 0 ? kCFBooleanFalse : kCFBooleanTrue).toOpaque())
+                renderer.enqueue(sample)
+                submitted += 1
+                lock.lock()
+                outputTime = max(outputTime, pts)
+                if self.revision == activeRevision && pts + timing.duration.seconds >= seekTime { seekPending = false }
+                lock.unlock()
+                if submitted % 300 == 0 { playbackLog.debug("BORAMIN_VIDEO submitted=\(submitted) pts=\(pts) dts=\(dts)") }
+            }
+        }
+    }
 }
 
 #if os(iOS)
@@ -374,6 +693,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     private var jump: NSObjectProtocol?
     private var ended: NSObjectProtocol?
     private var backgroundObserver: NSObjectProtocol?
+    private var diagnosticsObservers: [NSObjectProtocol] = []
     #if os(tvOS)
     private var displayManager: AVDisplayManager?
     #endif
@@ -381,12 +701,16 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     private var clockObserver: Any?
     private var exercise: Task<Void, Never>?
     private var audioLoader: StreamingAudioLoader?
+    private var fileLoader: StreamingFileLoader?
+    private var probeOutput: AVPlayerItemVideoOutput?
+    private var probeBegan = 0.0
     private var playbackObservation: NSKeyValueObservation?
     private var decodingLabel: UILabel?
     private var decodingLabelTask: Task<Void, Never>?
     private var debugPanel: UIView?
     private var debugLabel: UILabel?
     private var debugTimer: Timer?
+    private let debugStats = PlaybackDebugStats()
     private var debugSampleTime = 0.0
     private var debugSampleBytes: Int64 = 0
     private var hardwareFrameReady = false
@@ -441,34 +765,69 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        playbackLog.notice("Playback opened session=\(self.media.id.uuidString, privacy: .public) title=\(self.media.title, privacy: .private) sampleBuffer=\(self.media.usesSampleBufferVideo) codec=\(self.media.info.codec_type) size=\(self.media.info.width)x\(self.media.info.height) fps=\(self.media.info.frame_rate)")
         delegate = self
         #if os(iOS)
         // AVKit owns pinch-to-zoom for native video; each presentation starts fitted.
         // VP9's separate display layer retains its existing aspect-fit behavior.
-        if !media.vp9 { videoGravity = .resizeAspect }
+        if !media.usesSampleBufferVideo { videoGravity = .resizeAspect }
         #endif
         let item: AVPlayerItem
-        if media.vp9, let streaming = media.streaming {
+        if media.usesSampleBufferVideo, let streaming = media.streaming {
             do {
                 let loader = try streaming.makeAudioLoader(); audioLoader = loader
                 item = AVPlayerItem(asset: loader.makeAsset())
             } catch { onFailure?(error.localizedDescription); return }
+        } else if let streaming = media.streaming,
+                  ["mp4", "m4v", "mov"].contains(media.timeline.pathExtension.lowercased()) {
+            let loader = StreamingFileLoader(source: streaming.source, fileExtension: media.timeline.pathExtension.lowercased())
+            fileLoader = loader
+            item = AVPlayerItem(asset: loader.makeAsset())
+            playbackLog.notice("Native SMB resource loader enabled")
         } else { item = AVPlayerItem(url: media.timeline) }
-        item.preferredForwardBufferDuration = 3
+        if (CommandLine.arguments.contains("--exercise-remux-controls") || CommandLine.arguments.contains("--probe-frames-only") || CommandLine.arguments.contains("--exercise-remux-faults")) && !media.usesSampleBufferVideo {
+            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
+            item.add(output); probeOutput = output
+        }
+        probeBegan = ProcessInfo.processInfo.systemUptime
+        // Keep the bounded synthetic audio timeline responsive, but let AVPlayer
+        // choose buffering and automatically recover stalls for native HTTP video.
+        item.preferredForwardBufferDuration = media.usesSampleBufferVideo ? 3 : 0
         let title = AVMutableMetadataItem()
         title.identifier = .commonIdentifierTitle; title.value = media.title as NSString
         item.externalMetadata = [title]
         player = AVPlayer(playerItem: item)
-        if media.streaming != nil { player?.automaticallyWaitsToMinimizeStalling = false }
+        if !media.usesSampleBufferVideo {
+            // Native assets expose their audible/legible media-selection groups
+            // directly to AVKit's built-in audio and subtitle controls.
+            showsPlaybackControls = true
+            player?.appliesMediaSelectionCriteriaAutomatically = true
+            #if os(tvOS)
+            allowedSubtitleOptionLanguages = nil
+            requiresFullSubtitles = false // Keep the standard Off / Auto choices.
+            #endif
+        }
+        if media.usesSampleBufferVideo && media.streaming != nil { player?.automaticallyWaitsToMinimizeStalling = false }
+        diagnosticsObservers.append(NotificationCenter.default.addObserver(forName: AVPlayerItem.playbackStalledNotification, object: item, queue: .main) { [weak self] _ in
+            guard let self, self.active else { return }
+            playbackLog.warning("Playback stalled session=\(self.media.id.uuidString, privacy: .public) position=\(item.currentTime().seconds) bufferEmpty=\(item.isPlaybackBufferEmpty) likelyToKeepUp=\(item.isPlaybackLikelyToKeepUp)")
+        })
+        diagnosticsObservers.append(NotificationCenter.default.addObserver(forName: AVPlayerItem.newErrorLogEntryNotification, object: item, queue: .main) { [weak self] _ in
+            guard let self, self.active, let event = item.errorLog()?.events.last else { return }
+            playbackLog.error("Player error log session=\(self.media.id.uuidString, privacy: .public) code=\(event.errorStatusCode) domain=\(event.errorDomain, privacy: .private) comment=\(event.errorComment ?? "none", privacy: .private)")
+        })
         clockObserver = player?.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
             guard let self, !self.stopped else { return }
             self.media.streaming?.updateClock(time.seconds)
             let now = ProcessInfo.processInfo.systemUptime
             if CommandLine.arguments.contains("--vp9-diagnostics"), now - self.lastDiagnostic >= 2 {
                 self.lastDiagnostic = now
-                print("BORAMIN_VP9_DIAG host=\(now) clock=\(time.seconds) rate=\(self.player?.rate ?? 0) control=\(self.player?.timeControlStatus.rawValue ?? -1) video=\(self.video?.queuedTime ?? -1) renderer=\(self.video?.layer.sampleBufferRenderer.status.rawValue ?? -1) fetched=\(self.media.streaming?.source.fetchedBytes ?? 0) thermal=\(ProcessInfo.processInfo.thermalState.rawValue) cache=\(self.media.streaming?.source.cacheDiagnostic ?? "local")")
+                playbackLog.debug("BORAMIN_VP9_DIAG host=\(now) clock=\(time.seconds) rate=\(self.player?.rate ?? 0) control=\(self.player?.timeControlStatus.rawValue ?? -1) video=\(self.video?.queuedTime ?? -1) renderer=\(self.video?.layer.sampleBufferRenderer.status.rawValue ?? -1) fetched=\(self.media.streaming?.source.fetchedBytes ?? 0) thermal=\(ProcessInfo.processInfo.thermalState.rawValue) cache=\(self.media.streaming?.source.cacheDiagnostic ?? "local")")
             }
             if now - self.lastCheckpoint >= 15 {
+                let metrics = self.media.streaming?.source.transferMetrics
+                playbackLog.notice("Playback health session=\(self.media.id.uuidString, privacy: .public) position=\(time.seconds) state=\(self.player?.timeControlStatus.rawValue ?? -1) residentBytes=\(media_process_resident_bytes()) cacheBytes=\(metrics?.cached ?? 0) cacheCapacity=\(metrics?.capacity ?? 0) fetchedBytes=\(metrics?.fetched ?? 0) thermal=\(ProcessInfo.processInfo.thermalState.rawValue)")
+                self.video?.logPerformance(sessionID: self.media.id)
                 self.savePosition()
                 self.lastCheckpoint = now
             }
@@ -478,7 +837,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         }
         ended = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
             DispatchQueue.main.async {
-                print("BORAMIN_NATIVE playback reached end")
+                playbackLog.notice("BORAMIN_NATIVE playback reached end")
                 guard let self, self.active, !self.completedPlayback else { return }
                 self.completedPlayback = true
                 if let key = self.media.positionKey { PlaybackPositions.shared.clear(key) }
@@ -486,11 +845,11 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                 self.onDismiss?()
             }
         }
-        if media.vp9 {
+        if media.usesSampleBufferVideo {
             let video = HardwareVideo(path: media.source.path, remote: media.streaming?.source)
             video.failure = { [weak self] message in
                 guard let self, self.active else { return }
-                print("BORAMIN_ERROR \(message)"); self.player?.pause(); self.onFailure?(message)
+                playbackLog.error("BORAMIN_ERROR \(message)"); self.player?.pause(); self.onFailure?(message)
             }
             self.video = video
             video.firstFrame = { [weak self] in
@@ -508,12 +867,13 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             DispatchQueue.main.async {
                 guard let self, self.active else { return }
                 if item.status == .failed {
-                    print("BORAMIN_NATIVE_ERROR \(item.error?.localizedDescription ?? "Playback failed.")")
-                    print("BORAMIN_NATIVE_ERROR_DETAILS \(String(reflecting: item.error)) log=\(String(reflecting: item.errorLog()?.events))")
+                    playbackLog.error("AVPlayerItem failed code=\((item.error as NSError?)?.code ?? 0) domain=\((item.error as NSError?)?.domain ?? "unknown", privacy: .public)")
+                    playbackLog.error("BORAMIN_NATIVE_ERROR \(item.error?.localizedDescription ?? "Playback failed.")")
+                    playbackLog.error("BORAMIN_NATIVE_ERROR_DETAILS \(String(reflecting: item.error)) log=\(String(reflecting: item.errorLog()?.events))")
                     self.onFailure?(item.error?.localizedDescription ?? "Playback failed.")
                 }
                 guard item.status == .readyToPlay, !self.began else { return }
-                print("BORAMIN_NATIVE ready to play")
+                playbackLog.notice("BORAMIN_NATIVE ready to play")
                 self.began = true
                 self.startup = Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -529,6 +889,10 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                         guard !Task.isCancelled else { return }
                     }
                     guard !Task.isCancelled, self.active else { return }
+                    if !self.media.usesSampleBufferVideo {
+                        do { try await NativeAudioSelection.selectFirstSupported(in: item) }
+                        catch { guard self.active, !Task.isCancelled else { return }; self.onFailure?(error.localizedDescription); return }
+                    }
                     await self.restorePosition()
                     guard !Task.isCancelled, self.active else { return }
                     if let video = self.video {
@@ -539,10 +903,24 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                     }
                     guard !Task.isCancelled else { return }
                     self.player?.play()
-                    if CommandLine.arguments.contains("--exercise-stream-controls") {
+                    if CommandLine.arguments.contains("--exercise-native-tracks") {
+                        self.exercise = Task { @MainActor [weak self] in await self?.exerciseNativeTracks() }
+                    } else if CommandLine.arguments.contains("--exercise-remux-faults") {
+                        self.exercise = Task { @MainActor [weak self] in await self?.exerciseRemuxFaults() }
+                    } else if CommandLine.arguments.contains("--probe-frames-only") {
+                        self.exercise = Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            do { try await self.probeFrame(target: self.player?.currentTime().seconds ?? 0, after: self.probeBegan, label: "open-resume") }
+                            catch { print("BORAMIN_REMUX_TEST FAILED \(error.localizedDescription)") }
+                        }
+                    } else if CommandLine.arguments.contains("--exercise-remux-controls") {
+                        self.exercise = Task { @MainActor [weak self] in await self?.exerciseRemuxControls() }
+                    } else if CommandLine.arguments.contains("--exercise-stream-controls") || CommandLine.arguments.contains("--exercise-mkv-controls") {
                         self.exercise = Task { @MainActor [weak self] in await self?.exerciseStreamingControls() }
                     } else if CommandLine.arguments.contains("--exercise-resume-completion") {
                         self.exercise = Task { @MainActor [weak self] in await self?.exerciseResumeCompletion() }
+                    } else if CommandLine.arguments.contains("--exercise-short-video") {
+                        self.exercise = Task { @MainActor [weak self] in await self?.exerciseShortVideo() }
                     }
                 }
             }
@@ -551,6 +929,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             if player.status == .failed {
                 DispatchQueue.main.async {
                     guard let self, self.active else { return }
+                    playbackLog.error("AVPlayer failed code=\((player.error as NSError?)?.code ?? 0) domain=\((player.error as NSError?)?.domain ?? "unknown", privacy: .public)")
                     self.onFailure?(player.error?.localizedDescription ?? "Player failed.")
                 }
             }
@@ -563,35 +942,49 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                     self.savePosition()
                     NotificationCenter.default.post(name:Notification.Name("BoraMinPlaybackSync"),object:nil)
                 }
+                playbackLog.notice("Playback state session=\(self.media.id.uuidString, privacy: .public) state=\(self.player?.timeControlStatus.rawValue ?? -1) position=\(self.player?.currentTime().seconds ?? 0) waitingReason=\(self.player?.reasonForWaitingToPlay?.rawValue ?? "none", privacy: .public) bufferEmpty=\(item.isPlaybackBufferEmpty) likelyToKeepUp=\(item.isPlaybackLikelyToKeepUp)")
                 self.showDecodingLabelIfPlaying()
             }
         }
     }
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        playbackLog.warning("Memory warning session=\(self.media.id.uuidString, privacy: .public) residentBytes=\(media_process_resident_bytes())")
+    }
     private func restorePosition() async {
-        guard let key = media.positionKey,
-              let saved = PlaybackPositions.shared.position(for: key, duration: media.info.duration), let player else {
-            restoredPosition = true; return
+        var saved = media.positionKey.flatMap { PlaybackPositions.shared.position(for: $0, duration: media.info.duration) }
+        if CommandLine.arguments.contains("--probe-frames-only"), CommandLine.arguments.contains("--test-resume-position") {
+            // Isolated preferences exercise the save/load/restore flow without changing user history or iCloud.
+            let domain = "com.example.BoraMin.RemuxProbe.\(UUID().uuidString)"
+            if let defaults = UserDefaults(suiteName: domain) {
+                let positions = PlaybackPositions(defaults: defaults)
+                positions.save(75, duration: media.info.duration, for: "probe")
+                saved = positions.position(for: "probe", duration: media.info.duration)
+                defaults.removePersistentDomain(forName: domain)
+            }
         }
-        // Start at the preceding VP9 keyframe so resuming never skips unwatched
+        guard let saved, let player else { restoredPosition = true; return }
+        // Start at the preceding keyframe so resuming never skips unwatched
         // content and doesn't require decoding a long preroll after audio starts.
-        let target = media.vp9 && !media.keyframes.isEmpty ? (media.keyframes.last { $0 <= saved } ?? 0) : saved
+        let target = media.usesSampleBufferVideo && !media.keyframes.isEmpty ? (media.keyframes.last { $0 <= saved } ?? 0) : saved
         let success = await player.seek(to: CMTime(seconds: target, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
         guard !Task.isCancelled, active else { return }
         if success {
-            print("BORAMIN_RESUME restored saved=\(saved)s target=\(target)s")
+            playbackLog.notice("BORAMIN_RESUME restored saved=\(saved)s target=\(target)s")
         } else {
-            PlaybackPositions.shared.clear(key)
+            if let key = media.positionKey { PlaybackPositions.shared.clear(key) }
             _ = await player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
         }
         restoredPosition = true
     }
     private func savePosition() {
-        guard !completedPlayback, restoredPosition, startedPlayback, let key = media.positionKey, let player,
+        guard !CommandLine.arguments.contains("--no-playback-history"),
+              !completedPlayback, restoredPosition, startedPlayback, let key = media.positionKey, let player,
               player.currentItem?.status == .readyToPlay else { return }
         let seconds = player.currentTime().seconds
         guard seconds.isFinite else { return }
         PlaybackPositions.shared.save(seconds, duration: media.info.duration, for: key)
-        print("BORAMIN_RESUME saved \(seconds)s")
+        playbackLog.debug("BORAMIN_RESUME saved \(seconds)s")
     }
     #if os(iOS)
     func playerViewController(_ playerViewController: AVPlayerViewController,
@@ -661,16 +1054,16 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         }
         let resolution = media.info.width > 0 && media.info.height > 0 ? "\(media.info.width) × \(media.info.height)" : "Unknown"
         let fps = media.info.frame_rate > 0 ? String(format: "%.2f fps", media.info.frame_rate) : "fps unknown"
-        let decoder = media.vp9 ? "Hardware Decoding" : "System Decoding (HW/SW unknown)"
-        label.text = [network, cache, "Video: \(resolution), \(fps)", "Decoder: \(decoder)"].joined(separator: "\n")
+        let decoder = media.usesSampleBufferVideo && media.info.vp9 != 0 ? "Hardware Decoding" : "System Decoding (HW/SW unknown)"
+        label.text = ([network, cache, "Video: \(resolution), \(fps)", "Decoder: \(decoder)"] + debugStats.lines(item: player?.currentItem, video: video)).joined(separator: "\n")
         debugSampleTime = now
     }
     private func showDecodingLabelIfPlaying() {
         guard active, !showedDecodingLabel, player?.timeControlStatus == .playing,
-              !media.vp9 || hardwareFrameReady, let overlay = contentOverlayView else { return }
+              !media.usesSampleBufferVideo || hardwareFrameReady, let overlay = contentOverlayView else { return }
         // Only our VideoToolbox session reports actual HW/SW selection. AVPlayer
         // does not expose it; never infer hardware use from codec capability.
-        let text = media.vp9 ? "Hardware Decoding" : "System Decoding (HW/SW unknown)"
+        let text = media.usesSampleBufferVideo && media.info.vp9 != 0 ? "Hardware Decoding" : "System Decoding (HW/SW unknown)"
         showedDecodingLabel = true
         let label = UILabel()
         label.text = text
@@ -692,12 +1085,12 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         ])
         decodingLabel = label
         let shownAt = ProcessInfo.processInfo.systemUptime
-        print("BORAMIN_DECODING shown: \(text)")
+        playbackLog.debug("BORAMIN_DECODING shown: \(text)")
         decodingLabelTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
             guard let self else { return }
             self.decodingLabel?.removeFromSuperview(); self.decodingLabel = nil
-            print("BORAMIN_DECODING hidden after \(ProcessInfo.processInfo.systemUptime - shownAt)s")
+            playbackLog.debug("BORAMIN_DECODING hidden after \(ProcessInfo.processInfo.systemUptime - shownAt)s")
         }
     }
     private func exerciseResumeCompletion() async {
@@ -723,11 +1116,154 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     #if os(tvOS)
     func playerViewController(_ playerViewController: AVPlayerViewController, timeToSeekAfterUserNavigatedFrom oldTime: CMTime, to targetTime: CMTime) -> CMTime {
         let seconds = media.seekTime(targetTime.seconds)
-        if media.vp9 { video?.seek(to: seconds) }
-        print("BORAMIN_NATIVE seek requested=\(targetTime.seconds) keyframe=\(seconds)")
+        if media.usesSampleBufferVideo { video?.seek(to: seconds) }
+        playbackLog.notice("BORAMIN_NATIVE seek requested=\(targetTime.seconds) keyframe=\(seconds)")
         return CMTime(seconds: seconds, preferredTimescale: 60000)
     }
     #endif
+    // Diagnostic only: exercise the same public media selections AVKit's built-in
+    // picker uses. Never creates replacement controls or renders captions itself.
+    private func exerciseNativeTracks() async {
+        guard !media.usesSampleBufferVideo, let player, let item = player.currentItem else { return }
+        do {
+            guard let audio = try await item.asset.loadMediaSelectionGroup(for: .audible), audio.options.count >= 2,
+                  let subtitles = try await item.asset.loadMediaSelectionGroup(for: .legible), subtitles.options.count >= 2 else {
+                throw PlayerError("Native test fixture needs two audio and two subtitle tracks.")
+            }
+            print("BORAMIN_NATIVE_TRACKS groups audio=\(audio.options.count) subtitles=\(subtitles.options.count) allowsOff=\(subtitles.allowsEmptySelection)")
+            for option in audio.options {
+                item.select(option, in: audio)
+                try await Task.sleep(for: .seconds(1))
+                guard item.currentMediaSelection.selectedMediaOption(in: audio) == option else { throw PlayerError("Native audio selection failed.") }
+                print("BORAMIN_NATIVE_TRACKS selected audio \(option.displayName)")
+            }
+            for option in subtitles.options {
+                item.select(option, in: subtitles)
+                try await Task.sleep(for: .seconds(1))
+                guard item.currentMediaSelection.selectedMediaOption(in: subtitles) == option else { throw PlayerError("Native subtitle selection failed.") }
+                print("BORAMIN_NATIVE_TRACKS selected subtitles \(option.displayName)")
+            }
+            item.select(nil, in: subtitles)
+            guard item.currentMediaSelection.selectedMediaOption(in: subtitles) == nil else { throw PlayerError("Native subtitles Off failed.") }
+            player.pause()
+            let paused = player.currentTime().seconds
+            try await Task.sleep(for: .milliseconds(500))
+            guard abs(player.currentTime().seconds - paused) < 0.1 else { throw PlayerError("Native pause failed.") }
+            let success = await player.seek(to: CMTime(seconds: 20, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
+            guard success else { throw PlayerError("Native seek failed.") }
+            item.select(audio.options[0], in: audio)
+            item.select(subtitles.options[0], in: subtitles)
+            player.play()
+            try await Task.sleep(for: .seconds(2))
+            guard player.currentTime().seconds > 21, item.status == .readyToPlay, isReadyForDisplay else { throw PlayerError("Native playback did not continue after selections and seek.") }
+            print("BORAMIN_NATIVE_TRACKS PASS standard audio/subtitle selections, Off, pause and seek; native display ready")
+        } catch is CancellationError { }
+        catch { print("BORAMIN_NATIVE_TRACKS FAILED \(error.localizedDescription)") }
+    }
+    private func exerciseShortVideo() async {
+        guard let player, let video, media.info.duration > 4 else { return }
+        do {
+            try await Task.sleep(for: .seconds(3))
+            player.pause()
+            try await Task.sleep(for: .milliseconds(500))
+            guard let pixel = video.layer.sampleBufferRenderer.displayedPixelBuffer() else { throw PlayerError("Short test has no displayed video.") }
+            print("BORAMIN_SHORT_TEST displayed \(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel))")
+            let target = media.info.duration / 2
+            let sought = await player.seek(to: CMTime(seconds: target, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
+            guard sought else { throw PlayerError("Short test seek failed.") }
+            player.play()
+            try await Task.sleep(for: .seconds(2))
+            player.pause()
+            try await Task.sleep(for: .milliseconds(500))
+            guard player.currentTime().seconds > target + 1,
+                  video.layer.sampleBufferRenderer.displayedPixelBuffer() != nil else { throw PlayerError("Short test stalled after seek.") }
+            print("BORAMIN_SHORT_TEST PASS seek target=\(target) clock=\(player.currentTime().seconds)")
+            player.play()
+        } catch is CancellationError { }
+        catch { print("BORAMIN_SHORT_TEST FAILED: \(error.localizedDescription)") }
+    }
+    // Opt-in diagnostic only: require actual native output and timestamp agreement.
+    private func probeFrame(target: Double, after began: Double, label: String) async throws {
+        guard let player, let stream = media.streaming else { throw PlayerError("Missing test player.") }
+        for _ in 0..<400 {
+            try Task.checkCancellation()
+            guard active, player.currentItem?.status != .failed else { throw PlayerError("Player failed during \(label).") }
+            let time = player.currentTime()
+            if let output = probeOutput, time.seconds >= target - 0.15, output.hasNewPixelBuffer(forItemTime: time) {
+                var display = CMTime.invalid
+                if let pixel = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: &display),
+                   display.isNumeric, abs(display.seconds - time.seconds) < 0.15, display.seconds >= target - 0.15 {
+                    let metrics = stream.source.transferMetrics
+                    print("BORAMIN_REMUX_TEST FRAME label=\(label) latency=\(ProcessInfo.processInfo.systemUptime - began) host=\(ProcessInfo.processInfo.systemUptime) clock=\(time.seconds) pts=\(display.seconds) size=\(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel)) fetched=\(metrics.fetched) cache=\(metrics.cached) resident=\(media_process_resident_bytes()) display=\(isReadyForDisplay)")
+                    NotificationCenter.default.post(name: Notification.Name("BoraMinProbeFrame"), object: media.id)
+                    return
+                }
+            } else if let video, time.seconds >= target - 0.15, video.queuedTime >= target {
+                player.pause()
+                if let pixel = video.layer.sampleBufferRenderer.displayedPixelBuffer() {
+                    print("BORAMIN_REMUX_TEST FRAME label=\(label) latencyUpperBound=\(ProcessInfo.processInfo.systemUptime - began) clock=\(time.seconds) size=\(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel)) fetched=\(stream.source.fetchedBytes) cache=\(stream.source.transferMetrics.cached) resident=\(media_process_resident_bytes()) baseline=true")
+                    NotificationCenter.default.post(name: Notification.Name("BoraMinProbeFrame"), object: media.id)
+                    player.play(); return
+                }
+                player.play()
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw PlayerError("No confirmed video at \(target) during \(label).")
+    }
+    private func exerciseRemuxFaults() async {
+        guard let player, let stream = media.streaming else { return }
+        do {
+            try await probeFrame(target: 0, after: probeBegan, label: "fault-startup")
+            stream.source.configureTestNetwork(delay: 0.15)
+            var began = ProcessInfo.processInfo.systemUptime
+            _ = await player.seek(to: CMTime(seconds: 90, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
+            player.play()
+            try await probeFrame(target: 90, after: began, label: "slow-SMB-150ms-per-256KiB")
+            stream.source.configureTestNetwork(unavailableFor: 4)
+            began = ProcessInfo.processInfo.systemUptime
+            print("BORAMIN_REMUX_TEST injecting four-second SMB read outage")
+            _ = await player.seek(to: CMTime(seconds: 125, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
+            player.play()
+            try await probeFrame(target: 125, after: began, label: "SMB-outage-recovery")
+            stream.source.configureTestNetwork()
+            print("BORAMIN_REMUX_TEST PASS injected network faults")
+        } catch is CancellationError { }
+        catch { stream.source.configureTestNetwork(); print("BORAMIN_REMUX_TEST FAULT_RESULT \(error.localizedDescription)") }
+    }
+    private func exerciseRemuxControls() async {
+        guard let player, let stream = media.streaming else { return }
+        do {
+            print("BORAMIN_REMUX_TEST os=\(UIDevice.current.systemVersion) model=\(UIDevice.current.model) native=\(!media.usesSampleBufferVideo)")
+            try await probeFrame(target: 0, after: probeBegan, label: "startup")
+            try await Task.sleep(for: .seconds(2))
+            player.pause()
+            let paused = player.currentTime().seconds, fetched = stream.source.fetchedBytes
+            try await Task.sleep(for: .seconds(2))
+            guard abs(player.currentTime().seconds - paused) < 0.1 else { throw PlayerError("Pause moved the clock.") }
+            print("BORAMIN_REMUX_TEST PAUSE extraBytes=\(stream.source.fetchedBytes - fetched)")
+            player.play()
+            let targets = CommandLine.arguments.contains("--test-native-file-loader") ? [6000.0, 20.0, 9000.0, 5.0, 125.0] : [125.0, 20.0, 90.0, 5.0, 125.0]
+            for requested in targets {
+                let target = media.usesSampleBufferVideo ? media.seekTime(requested) : requested
+                let began = ProcessInfo.processInfo.systemUptime
+                let success = await player.seek(to: CMTime(seconds: target, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
+                guard success else { throw PlayerError("Seek rejected.") }
+                player.play()
+                try await probeFrame(target: target, after: began, label: "seek-\(requested)")
+                let before = player.currentTime().seconds
+                try await Task.sleep(for: .seconds(2))
+                guard player.currentTime().seconds > before + 1 else { throw PlayerError("Video timeline stalled after seek.") }
+                try await probeFrame(target: before + 1, after: began, label: "continued-\(requested)")
+            }
+            let end = media.info.duration - 3
+            _ = await player.seek(to: CMTime(seconds: end, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
+            player.play()
+            try await probeFrame(target: end, after: ProcessInfo.processInfo.systemUptime, label: "near-end")
+            print("BORAMIN_REMUX_TEST PASS controls; waiting for native completion")
+        } catch is CancellationError { }
+        catch { print("BORAMIN_REMUX_TEST FAILED \(error.localizedDescription)") }
+    }
     private func exerciseStreamingControls() async {
         guard let player, let stream = media.streaming else { return }
         do {
@@ -736,6 +1272,10 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             let before = stream.source.fetchedBytes
             try await Task.sleep(for: .seconds(2))
             print("BORAMIN_STREAM pause test at \(player.currentTime().seconds)s; extra reads \(stream.source.fetchedBytes - before)")
+            if CommandLine.arguments.contains("--exercise-mkv-controls"), let video {
+                guard let pixel = video.layer.sampleBufferRenderer.displayedPixelBuffer() else { throw PlayerError("No displayed video frame while paused.") }
+                print("BORAMIN_MKV_TEST displayed frame \(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel))")
+            }
             for (requested, paused) in [(90.0, false), (20.0, false), (60.0, true)] {
                 try Task.checkCancellation()
                 let seconds = media.seekTime(requested)
@@ -750,7 +1290,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                 var positioned = false
                 for _ in 0..<300 {
                     let time = player.currentTime().seconds
-                    if completed == true, abs(time - seconds) < 3,
+                    if completed == true, abs(time - seconds) < 3, paused || time > seconds + 0.2,
                        self.video.map({ $0.queuedTime >= seconds && abs($0.queuedTime - time) < 1 }) ?? true {
                         positioned = true; break
                     }
@@ -763,9 +1303,19 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                 let advanced = player.currentTime().seconds - start
                 guard paused ? abs(advanced) < 0.1 : advanced > 1 else { throw PlayerError("Seek test stalled after \(seconds)s") }
                 print("BORAMIN_STREAM PASS seek requested=\(requested) keyframe=\(seconds)s readyAfter=\(readyAfter)s paused=\(paused) clock=\(player.currentTime().seconds) video=\(self.video?.queuedTime ?? -1); SMB fetched \(stream.source.fetchedBytes)")
+                if paused, CommandLine.arguments.contains("--exercise-mkv-controls"), let video {
+                    guard let pixel = video.layer.sampleBufferRenderer.displayedPixelBuffer() else { throw PlayerError("No displayed video frame after seek.") }
+                    print("BORAMIN_MKV_TEST displayed frame after seek \(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel))")
+                }
                 if paused { player.play() }
             }
             print("BORAMIN_STREAM controls test finished at \(player.currentTime().seconds)s; SMB fetched \(stream.source.fetchedBytes)/\(stream.source.size)")
+            if CommandLine.arguments.contains("--exercise-mkv-controls") {
+                let end = max(0, media.info.duration - 3)
+                _ = await player.seek(to: CMTime(seconds: end, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
+                player.play()
+                print("BORAMIN_MKV_TEST playing to end from \(end)s")
+            }
         } catch is CancellationError { }
         catch { print("BORAMIN_STREAM TEST FAILED: \(error.localizedDescription)") }
     }
@@ -775,16 +1325,18 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         requestLandscape()
         #endif
         #if os(tvOS)
-        guard media.vp9 else { return }
+        guard media.usesSampleBufferVideo else { return }
         let info = media.info
-        if let format = try? HardwareVideo.makeFormat(info) {
+        if let format = media.videoFormat {
             displayManager = view.window?.avDisplayManager
             displayManager?.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: Float(info.frame_rate), formatDescription: format)
+            playbackLog.notice("Display matching session=\(self.media.id.uuidString, privacy: .public) enabled=\(self.displayManager?.isDisplayCriteriaMatchingEnabled ?? false) switchInProgress=\(self.displayManager?.isDisplayModeSwitchInProgress ?? false) requestedFPS=\(info.frame_rate)")
         }
         #endif
     }
     func stop() {
         guard !stopped else { return }
+        playbackLog.notice("Playback closing session=\(self.media.id.uuidString, privacy: .public) position=\(self.player?.currentTime().seconds ?? 0) completed=\(self.completedPlayback)")
         savePosition()
         NotificationCenter.default.post(name:Notification.Name("BoraMinPlaybackSync"),object:nil)
         stopped = true
@@ -801,6 +1353,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         player?.pause(); video?.stop(); player?.replaceCurrentItem(with: nil)
         video?.layer.removeFromSuperlayer(); video = nil
         audioLoader?.stop(); audioLoader = nil
+        fileLoader?.stop(); fileLoader = nil
         if let clockObserver { player?.removeTimeObserver(clockObserver); self.clockObserver = nil }
         media.streaming?.stop()
         if let jump { NotificationCenter.default.removeObserver(jump); self.jump = nil }
@@ -810,6 +1363,8 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         displayManager?.preferredDisplayCriteria = nil
         #endif
         readiness = nil; failureObservation = nil
+        for observer in diagnosticsObservers { NotificationCenter.default.removeObserver(observer) }
+        diagnosticsObservers.removeAll()
         player = nil
     }
     deinit {
@@ -818,6 +1373,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         if let jump { NotificationCenter.default.removeObserver(jump) }
         if let ended { NotificationCenter.default.removeObserver(ended) }
         if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+        for observer in diagnosticsObservers { NotificationCenter.default.removeObserver(observer) }
         video?.stop()
     }
 }

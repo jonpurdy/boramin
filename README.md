@@ -1,129 +1,127 @@
-# BoraMin for Apple TV
+# BoraMin
 
-Bundle identifier: `com.example.BoraMin`.
+A native SMB video player for Apple TV, iPhone/iPad and Mac. Browse shares, save favorites, resume unfinished videos and sync your library details through iCloud. Playback uses Apple's standard AVKit controls.
 
-tvOS **26.6** MVP: automatically connect to a saved SMB2/3 server, enumerate its shares, browse folders, select a video and play it with **AVPlayerViewController's standard controls**. Original VP9 compressed video goes through a hardware-required VideoToolbox session. No custom transport buttons or scrubber.
+| Platform | Minimum OS | Xcode project / scheme | Bundle identifier |
+| --- | --- | --- | --- |
+| Apple TV | tvOS 26.6 | `BoraMin.xcodeproj` / `BoraMin tvOS` | `com.example.BoraMin` |
+| iPhone / iPad | iOS 26.0 | `BoraMin.xcodeproj` / `BoraMin iOS` | `com.example.BoraMin` |
+| Mac | macOS Sequoia 15.0 | `BoraMin.xcodeproj` / `BoraMin macOS` | `com.example.BoraMin` |
 
-## Run
+One Xcode project contains three native targets; there are no separate iOS/Mac projects. Current builds target physical Apple devices / Apple Silicon (arm64), without simulator or Intel slices. All three apps use the shared bundle identity from `tools/app_identity.py` for one multiplatform App Store Connect record. See [iOS notes](iOS/README.md) and [Mac notes](MacOS/README.md).
 
-1. Open `BoraMin.xcodeproj` in Xcode. Choose your development team under Signing & Capabilities.
-2. Select a physical Apple TV running tvOS 26.6 or newer, build and run the shared BoraMin scheme.
-3. Choose **Files** on the home screen. It connects automatically using your saved server details. On first use, enter the server's hostname/IP (optionally `smb://` and a port), username and password. Empty username means guest. Domain is optional. You can edit these details later in **Settings → Connection Setup**.
-4. Leave Share empty to enumerate shares, or enter a known share when the server denies enumeration. Open folders and choose a video. Playback streams directly from SMB after reading the metadata and a small initial buffer.
-5. Use the native player to pause, seek and change playback speed; use Back/Menu to dismiss. The browser's Parent folder/Back buttons navigate folders and shares.
+## Using the app
 
-The black home screen has SF Symbol buttons with color-only focus feedback (no enlargement or hover effect), charcoal (`#202020`) unfocused backgrounds and white content, and near-white focused backgrounds with black content. The home screen has no title above the tiles. The home screen has buttons for **Files**, **Favorites**, **Watching**, and **Settings**. On tvOS, tiles, SF Symbols, labels and spacing use 65% of the original size. Native navigation headers use white text on a transparent bar over the black background. Files and Favorites have separate browsing sessions: opening or navigating a favorite never changes the server, share or folder last visited in Files. In Files, press and hold Select on a folder or share to open its standard context menu and choose **Favorite**. Favorites saves unique server/share/folder locations in local UserDefaults, without passwords, and lists them alphabetically. Selecting one reconnects using the saved connection credentials and opens that folder directly. Back navigates up through folders/shares in Files. When opened from Favorites, Back at the saved folder returns directly to Favorites; deeper subfolders navigate up to that saved folder first. Dotfiles stay hidden, files and folders sort together, and playback progress prefixes do not affect sorting.
+The main screen provides **Files**, **Favorites**, **Watching** and **Settings**; Mac presents these through its native sidebar and Settings window. Media comes from your SMB server/NAS. No media is included, and the Mac app does not add local-file opening.
 
-Press and hold Select on a video and choose **Reset playback** to clear its saved position. Its percentage/time prefix disappears immediately, and the next playback starts at the beginning. The action is disabled when the video has no saved position.
+- **Files** automatically connects to your saved SMB server. On first use, enter a hostname/IP (optionally `smb://` and a port), username/password and optional domain. An empty username means guest. Leave Share empty to enumerate shares, or specify one when enumeration is unavailable. Edit the connection under **Settings → Connection Setup**. No server or credentials are embedded in builds.
+- **Favorites** stores server/share/folder paths alphabetically. Press and hold Select on Apple TV, touch and hold on iOS, or Control-click on Mac to add/remove a favorite. Files and Favorites keep separate navigation state; Back at a favorite's root returns to Favorites.
+- **Watching** lists unfinished videos by most recent saved position. Filenames show `(80%, 00:12:45)` progress prefixes. Playback checkpoints every 15 seconds and saves on pause/exit; reopening resumes near that position. Completion clears the bookmark and closes playback. **Reset Playback** clears it manually. History is bounded to 500 active bookmarks.
+- Files and folders sort together using natural alphabetical order. Dotfiles stay hidden. **Display all files**, off by default, adds other file types to the listing; playable extensions are `mp4`, `m4v`, `mov`, `mkv`, `webm`, `avi`, `ts` and `m2ts`. The extension filter does not guarantee codec compatibility.
+- **Show Debug Info**, off by default, displays network payload speed, compressed-cache usage, source resolution/fps and decoder status. White caption text uses a translucent black backdrop. A five-second decoder label also appears at playback startup.
 
-With **Sync via iCloud** enabled, installations restore connection details from the signed-in iCloud account. Otherwise connection fields start empty. Enter the server, username, password and optional domain/share once in Files, then connect. After a successful connection, server/username/domain/share are saved in UserDefaults and the password is stored in the local, device-only Keychain, scoped to server/port/account/domain. Files connects automatically on subsequent visits, including the saved Keychain password. Folder browsing and playback check the SMB session and reconnect when it has expired; returning to Files from the background refreshes the current listing. Temporary network failures retry every ten seconds while the browser is open, preserving the current share/folder. Missing details or rejected credentials show setup instead. **Settings → Connection Setup** always provides manual editing. Leaving setup without connecting discards edits, and failed edits keep the previous working connection. Reconnecting a favorite does not replace the saved Files connection. No default credential or server files are read or bundled, even if local `default_*.txt` files exist. Favorites reuse the saved credentials. No server address or password is included in the app build. iCloud uses the encrypted private CloudKit database; passwords remain in local Keychain and are never written into the sync queue.
+TV/iOS browsing uses black backgrounds and native selection/context menus. iOS playback opens in landscape; native AVPlayer video supports Apple's fit/fill pinch gesture. Mac uses a native sidebar, file tables, Settings window, keyboard shortcuts and resizable/full-screen AVKit playback. Demuxed MKV/VP9 video remains aspect-fit.
 
-The installed toolchain is Xcode 26.3 / tvOS SDK 26.2. The project and compiled dependencies deliberately set deployment target 26.6, as requested. Xcode warns that its SDK is older than that deployment target. This does not mean it was compiled against a 26.6 SDK. Use a newer toolchain when available. Only **physical arm64 tvOS** is built; these static libraries do not include simulator slices.
+## Playback and limits
 
-## VP9 and native controls
+Supported native containers/codecs normally play directly through AVPlayer (VP9 takes the separate path described below), including its standard audio/subtitle selection for tracks AVFoundation exposes. Native playback uses AVPlayer’s automatic forward buffering and stall recovery; the separate demuxed audio timeline retains its existing bounded buffering configuration. Audio codec availability does not guarantee support for every profile; see the [AAC compatibility investigation](Tests/Native-audio-compatibility.md). Sidecar SRT/VTT selection is not implemented.
 
-This uses the finding and physical-device evidence from the adjacent `atv vp9-av1 testing` project:
+MKV/WebM, and VP9 regardless of container, use the FFmpeg demux/audio pipeline with Apple's video APIs and a separate sample-buffer video layer, while AVKit provides the controls. H.264, HEVC and other integrated system-supported video codecs can play without video re-encoding. VP9 requires a hardware VideoToolbox session and verifies hardware use. Other playback displays **System Decoding (HW/SW unknown)** because the app does not confirm hardware/software selection for those paths. No FFmpeg software-video decoder fallback is bundled; this does not imply that every Apple system decoder uses hardware. Hardware VP9 depends on OS/device support; iOS supplemental VP9 registration requires iOS 26.2+.
 
-- Call `VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_VP9)` once before session creation. This API is public on tvOS 26.2+.
-- Require `kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder` and check `kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder`. Session creation and decode errors are surfaced; there is no software VP9 video decoder or silent fallback.
-- Read profile, bit depth, dimensions, range and subsampling from the original VP9 keyframe header. Do not infer 8-bit from an unknown FFmpeg pixel format: the minimal tvOS library has no software VP9 decoder to populate that field during stream probing. The Mac control now also forbids software video probing so this difference cannot be hidden by Homebrew's extra decoders. Set the source vpcC level (or derive its picture-size/sample-rate level) and explicitly request 8-bit NV12 or 10-bit P010 output.
-- Demux original packets from MP4/Matroska/WebM with a small FFmpeg C bridge. Preserve timestamps, source color signalling and static HDR mastering/content-light metadata. Support VP9 8-bit Profile 0 and 10-bit Profile 2, 4:2:0.
-- Decode into an AVSampleBufferDisplayLayer in the native controller's content overlay. Bind its control timebase directly to the AVPlayer item's timebase. AVPlayer owns the audio and timeline. Its controls drive pause/rate/seek; a time-jump notification flushes and restarts VP9 from a preceding keyframe.
-- Bound decoded video read-ahead to about 400 ms. Decode dependencies but omit presentation of frames already expired. Request source frame-rate/dynamic-range display criteria while the player is open; actual output depends on Apple TV Match Content settings and the display.
+The compressed SMB cache defaults to a 128 MiB capacity per active stream across formats/platforms. This is not a cap on total app memory: decoded frames, audio and system-player buffers use additional memory. Streaming reads metadata and requested ranges without downloading the whole movie. Demuxed playback decodes requested audio windows to stereo PCM and uses the native audio timeline to drive the sample-buffer video layer. For the demuxed iOS/tvOS path, the AVKit seek delegate snaps scrubbing to the nearest available indexed keyframe; saved-position resume starts at a preceding keyframe. Native MP4/MOV seeking remains controlled by AVPlayer. Demuxed index discovery allows at most 4 MiB of additional reads. Files without useful indexes can seek slowly. Cancellation stops the streaming listener/readers; pending SMB requests may remain until their timeout.
 
-An audio-only CAF timeline lets the native controller control hardware-decoded VP9 without assuming AVPlayer can open a VP9 container. For VP9, the first audio track is decoded/resampled on demand to stereo 48 kHz signed 16-bit PCM. An AVAssetResourceLoader delegate serves requested sample ranges to AVPlayer; video-only files receive generated silence. Neither the movie nor a full PCM file is written to storage. AAC, Opus, Vorbis, AC-3, E-AC-3, FLAC, MP3, ALAC, common integer PCM and DTS audio decoders are built. This is **stereo audio**, with no Atmos/bitstream passthrough or track switching.
+MKV uses one audio track automatically selected by FFmpeg and has no selectable subtitles. MKV audio/subtitle selection and a bundled software-video fallback remain deferred. The **opt-in** `--experimental-vp9-remux` prototype copies VP9/AAC into bounded on-demand fMP4/HLS for native AVPlayer rendering; it is not the production default. Keep its [results and limitations](Tests/Streaming-remux-investigation.md) in mind before further integration. The demuxed path can also trigger tvOS’s system Now Playing banner (“To open player, hold…”); suppression remains deferred.
 
-Other video codecs use the same SMB byte-range source through a loopback-only HTTP endpoint with AVPlayer. Their container/codec must be supported by native tvOS playback. For example, H.264/HEVC MP4/MOV are expected paths; H.264 MKV is **not** remuxed by this MVP and may fail. A listed file extension is not a guarantee that every codec combination in that container works. Unsupported media reports an error.
+## App identity
 
-## Streaming and interface
+All app targets use `com.example.BoraMin`; the existing CloudKit container stays `iCloud.com.example.BoraMin`. Earlier builds used `com.example.BoraMin` on Apple TV, with `.SyncTest` and `.macOS` suffixes on iOS and Mac. Installing a build with the shared `com.example.BoraMin` ID creates a distinct local app identity on every platform; it does not upgrade the old prototype's preferences, sandbox or Keychain access group. The old apps/data remain intact. Saved data can be restored from the same iCloud account/container/environment after sync; settings kept only locally may require re-entry. No migration through private APIs or old-container access is implemented.
 
-- SMB reads use a shared **128 MiB in-memory block cache** for all streaming formats on iOS and tvOS, with exact-length range checks. FFmpeg custom AVIO callbacks provide random reads and seeks directly from that cache; FFmpeg network protocols remain disabled.
-- AVPlayer-compatible formats stream from a loopback HTTP range endpoint. VP9 uses an AVAssetResourceLoader delegate for on-demand CAF audio, with the hardware video decoder bound to the same native player's clock. The synthetic audio advertises independent random-access availability (`isEntireLengthAvailableOnDemand`); otherwise tvOS's progressive parser can block its media service during a seek.
-- Only requested audio windows are decoded. Each new native loading request can preroll its first five seconds before the clock moves; larger progressive requests then follow the playback clock. AVFoundation cancels stale resource-loading requests at native seeks. Video restarts at a preceding keyframe on time-jump notifications or a detected discontinuity in that clock, including paused seeks whose notification is delayed.
-- Audio seeks use the indexed video track for container positioning. Seeking an unindexed audio track in Matroska can otherwise scan much of the movie. Files without a useful index can still be slow to seek.
-- Native VP9 scrubbing snaps to the nearest indexed keyframe, trading exact positioning for faster video startup. Index discovery is bounded to 4 MiB of streamed reads; an unavailable or incomplete index preserves exact seeking. Timestamp conversion rounds to the container timebase so a fractional keyframe timestamp does not accidentally select its predecessor. Video retains the last displayed picture while preparing the new position, and duplicate pending seek notifications are coalesced.
-- Browsing, connection, loading and player backgrounds are solid RGB **0, 0, 0**. System focus highlights and Apple's native playback controls retain their standard appearance.
-- A noninteractive top-right label uses AVPlayerViewController's standard content overlay for five seconds after playback starts. VP9 displays **Hardware Decoding** only after the hardware-required session produces a frame. Other formats display **System Decoding (HW/SW unknown)** because AVPlayer does not expose its selected decoder through a public API. The app currently has no software-video decoder path, so it does not claim **Software Decoding**. Seeking does not restart the label timer.
-- Startup and seeks require metadata, codec preroll and network buffers, not the entire movie. No offline download cache or free-space requirement for a full movie/PCM timeline remains in normal SMB playback.
-- Dismissal and cancellation stop readers, close the loopback listener and release the cache. Pending SMB calls may take until the client timeout to finish in the background. Native buffering and TV HDR/Match Content settings still affect playback.
-- Local resume positions use UserDefaults, keyed by a hash of the SMB server/port, share, full path and file size. Exit and backgrounding save the current position; playback also checkpoints every 15 seconds. Reopening restores it before playback begins (at the preceding VP9 keyframe, so nothing unwatched is skipped). Reaching the end clears it. The store retains the 500 most recently updated bookmarks. Bookmark keys remain hashes; a separate bounded metadata store records the SMB server, share, filename/path, size and account/domain for Watching, without passwords.
-- Files with saved positions show `(80%, 00:12:45) Filename.mkv` in the list, using the saved duration for the percentage. This requires no extra media probes while browsing; original filenames still determine alphabetical sorting. Completed files return to plain filenames.
-- No subtitles, posters/library, automatic discovery, multi-audio selection, Atmos passthrough or AV1 software path yet. Non-VP9 containers/codecs still need native tvOS support; H.264 MKV is not remuxed by this MVP.
+Development builds still select CloudKit **Development**. Unifying bundle IDs does not change the CloudKit environment or copy records into Production. The Production CloudKit schema was deployed on October 22, 2026, without copying development records. The [TestFlight export workflow](docs/TestFlight.md) explicitly selects Production during distribution signing; end-to-end TestFlight sync validation remains to be done.
 
-## Build dependencies
+## iCloud and credentials
 
-AMSMB2 4.0.3 and its pinned libsmb2 source are in `vendor/AMSMB2`. The local package is adjusted to build statically without upstream test dependencies, so app builds need no Swift package network access.
+**Sync via iCloud** is on by default. It merges connection profiles, encrypted credentials, favorites, playback positions/resets, Watching metadata, Display all files and Show Debug Info in the private `iCloud.com.example.BoraMin` container. Local passwords live in device-only Keychain; ordinary preferences and the durable sync queue exclude passwords. Navigation state, playback sessions and the sync switch remain local.
 
-Generated FFmpeg libraries live in ignored `vendor/ffmpeg`; rebuild them on a fresh checkout:
+The shared CKSyncEngine implementation fetches before merging/sending, retains versioned reset/removal states, and queues edits while offline or sync is disabled. Launch/foreground and important edits request sync; ordinary playback checkpoints are coalesced. Important edits are normally scheduled after about one second, ordinary position updates after about 45 seconds, and failed syncs retry after about 60 seconds while the app can run. Lifecycle/manual requests can trigger an earlier sync; these are scheduling delays, not delivery guarantees. Delivery is asynchronous. Settings shows sync status and a manual Sync Now action. Account changes pause sync to avoid mixing users; Apple TV profile switching is not implemented. Normal Xcode development builds use CloudKit's Development environment; TestFlight/App Store distribution uses Production signing and the deployed Production schema. See [sync design and caveats](docs/iCloud-sync.md).
+
+Development and Production have separate records and do not sync with each other. No data-transfer feature is implemented. Replacing a development build with TestFlight is not a supported migration: the current local sync metadata is not separated by environment. Keep development testing separate from your production library; use a deliberate migration if existing development data must be preserved.
+
+## Building
+
+Requires Xcode, Python 3, make and network access for the checksum-verified FFmpeg source download. AMSMB2/libsmb2 are vendored; generated FFmpeg libraries are ignored. The same pinned minimal LGPL FFmpeg build supplies demuxing/audio, with no video software decoders. The apps have no Homebrew runtime dependency. Preserve the [dependency notices](vendor/DEPENDENCIES.md) when distributing.
+
+Generate the shared project, then build the platform libraries and scheme you need. FFmpeg only needs rebuilding when its generated libraries are missing or its build configuration changes:
 
 ```sh
-python3 tools/build_ffmpeg.py
 python3 tools/create_project.py
-xcodebuild -project BoraMin.xcodeproj -scheme BoraMin -configuration Release \
-  -destination 'generic/platform=tvOS' -derivedDataPath build \
-  CODE_SIGNING_ALLOWED=NO build
+
+# Apple TV
+python3 tools/build_ffmpeg.py --platform tvos
+xcodebuild -project BoraMin.xcodeproj -scheme "BoraMin tvOS" -configuration Release \
+  -destination 'generic/platform=tvOS' -derivedDataPath build build
+
+# iPhone / iPad
+python3 tools/build_ffmpeg.py --platform ios
+xcodebuild -project BoraMin.xcodeproj -scheme "BoraMin iOS" -configuration Release \
+  -destination 'generic/platform=iOS' -derivedDataPath build/iOS build
+
+# Mac
+python3 tools/build_ffmpeg.py --platform macos
+xcodebuild -project BoraMin.xcodeproj -scheme "BoraMin macOS" -configuration Release \
+  -destination 'platform=macOS,arch=arm64' -derivedDataPath build/macOS build
 ```
 
-The dependency helper verifies the pinned source archive's SHA-256 and builds only container/audio libraries, with no video software decoders. It requires network access, Xcode command-line tools and make. The project generator preserves development-team and bundle-identifier choices saved in the project. See `vendor/DEPENDENCIES.md` for versions and license notes.
+Project regeneration preserves per-target development team, version/build numbers and compatible provisioning-profile choices. Keep project structure/build-setting changes in `tools/create_project.py` so regeneration retains them.
 
-## Verification
+Choose your development team/provisioning in Xcode for signed builds and iCloud. Add `CODE_SIGNING_ALLOWED=NO` for a compile-only check, or `-allowProvisioningUpdates` when provisioning updates are authorized. The installed Xcode 26.3 has SDK 26.2 and warns about the requested tvOS 26.6 deployment target; that is not a claim to have built against a 26.6 SDK.
 
-`Tests/BridgeTests.c` covers missing input, source metadata, original packet extraction, keyframe seeking, video-only silence, Opus audio preparation and cancellation. `Tests/StreamingTests.c` checks custom range IO, partial-file startup, exact sequential PCM, random audio seeking and cancellation. `Tests/StreamingProbe.swift` exercises a real SMB source, HTTP HEAD/middle/suffix ranges, 404/416 responses, native CAF resource loading and seek-aware audio reads against a temporary read-only localhost share. `Tests/PlaybackProbe.swift` uses the app's format/session code to confirm hardware and decode all 600 frames of the adjacent project's source clip, and checks the prepared CAF with AVFoundation. These Mac controls do not establish Apple TV playback quality.
+## TestFlight
 
-`python3 tools/run_tests.py` runs those checks using Homebrew FFmpeg on this Mac. The hardware control requires access to the system decoder services; a sandbox may reject decoder creation.
+Follow the [routine TestFlight build and Organizer upload guide](testflight.md).
 
-Verified October 17, 2026: signed Release tvOS build succeeds; all 600 original VP9 payloads match the lab fixture; all 600 frames decode on this Mac with hardware confirmed; Opus-to-PCM output matches FFmpeg byte for byte; prepared CAF is playable through AVFoundation. The same SMB client successfully enumerates a temporary read-only SMB2 share, browses a nested folder with a Unicode/space-containing filename, and downloads a file whose SHA-256 matches the source. That test server rejects clean logoff after transfer; the browser handles teardown as best effort.
+iOS and tvOS **0.1 (1)** uploaded successfully through Xcode Organizer on October 22, 2026, using **App Store Connect** distribution, which supports external testing. The required tvOS Top Shelf assets are included. Upload success does not establish completion of processing, export compliance or beta review; external availability has not been confirmed. The reported **Missing Compliance** questionnaire still needs to be completed based on the bundled SMB cryptography.
 
-Initial CoreDevice pairing/deployment failures were resolved; the final app subsequently installed and launched on the Apple TV. Apple documents that tvOS has no separate Developer Mode switch, so the earlier CoreDevice 4011 message was not a request to enable one.
+For another beta, choose a new build number, archive the requested schemes, then use **Organizer → Distribute App → App Store Connect**. When asked to control Xcode/Organizer, follow the actual UI workflow in the guide. Building alone does not archive/upload, and uploading does not install on devices or invite testers.
 
-The reported `Decode VP9: OSStatus -12909` failure was reproduced as a metadata mismatch: minimal FFmpeg did not supply a pixel format, and the app incorrectly assumed 8-bit for a 10-bit Profile 2 stream. The app now parses the keyframe header directly and requests matching decoder output. All 9,506 frames in the exact original VP9 HDR fixture MKV decode on this Mac with hardware confirmed and software VP9 probing disabled. The corrected build also plays that exact MKV on the physical Apple TV with hardware confirmed; the user confirmed both video and audio. On-device decoding reached 5,100 frames / about 85 seconds before the user paused or left playback; it was not an uninterrupted full-duration device test. The normal build excludes the bundled diagnostic movie and retains user-entered connection settings. See `Tests/verification.txt` for the validation record.
+The Production schema is deployed. Alternatively, `python3 tools/prepare_testflight.py PLATFORM --export --build-number N` creates an archive and a local distribution with Production iCloud entitlements; replace `PLATFORM` with `ios`, `tvos` or `macos` and `N` with the next appropriate build number. It does not upload. The helper reuses its archive output path, so preserve archives needed for previous releases. See [release preparation and verification](docs/TestFlight.md).
 
-For a physical-device smoke test, generate a temporary project with `BORAMIN_SMOKE_FIXTURE=/absolute/path/smoke.webm python3 tools/create_project.py`, build/install, then launch with `--smoke-test`. The resource must be named `smoke.webm`. Alternatively put that file in the app's Library/Caches directory. This legacy bundled-file diagnostic prepares local audio and uses the same native player, but does not test SMB streaming. Regenerate without that environment variable to remove the bundled fixture. Console records hardware confirmation, VP9 EOF/frame count and native playback completion. Normal launches show the BoraMin home screen.
+## Tests and investigations
 
-For a real SMB streaming smoke test, launch with `--stream-smoke-test SHARE RELATIVE_PATH`. It uses the saved credentials without printing them. Add `--exercise-stream-controls` to exercise native pause and seeks to 90s and 20s on a sufficiently long file. Normal launches show the SMB browser, with no automated playback or control actions. See `Tests/verification.txt` for actual measured results and the distinction between local controls and physical-device tests.
+Playback and streaming diagnostics use Apple’s unified `Logger`, with subsystem `com.example.BoraMin`. Lifecycle, player-state, decoder/error and periodic memory/cache entries help investigate unexpected exits. See [collecting playback logs and crash reports](docs/Diagnostics.md); these logs are separate from the on-screen debug overlay and are not automatically attached to TestFlight crash reports.
 
-With `--stream-smoke-test`, `--exercise-player-lifecycle` opens, plays, and dismisses the clip three times in one process through the real SwiftUI full-screen presentation. This guards against the second-video presentation crash. Playback payloads use immutable reference identity so SwiftUI does not recursively compare the imported C metadata and adjacent Swift arrays. Teardown is idempotent, and cancellation cannot surface a stale error from the dismissed player.
+```sh
+python3 tools/run_tests.py          # Host persistence, demux/audio, keyframes, hardware VP9 and native codec checks
+python3 tools/test_streaming_remux.py # Opt-in remux packet/timestamp regression
+# After building macOS FFmpeg libraries:
+tools/test_macos_playback.sh         # Actual Mac AVKit adapter, frames, selections, seeks and lifecycle
+```
 
-## Settings
+Host test tools require command-line FFmpeg/Homebrew development libraries and the adjacent `atv vp9-av1 testing` fixtures; they do not establish iPhone/Apple TV playback quality. The Mac adapter probe generates disposable local test media, without adding local-file opening to the app.
 
-**Display all files** is off by default and saved locally using AppStorage/UserDefaults. Browsing in Files and Favorites always includes folders; by default it shows only supported video extensions (`mp4`, `m4v`, `mov`, `mkv`, `webm`, `avi`, `ts`, `m2ts`). Enable the toggle to also see other files, which remain unavailable for playback. Dotfiles and dotfolders stay hidden. The filter updates existing listings without another SMB request.
+Reusable device smoke-test flags and isolated probes are documented in [Tests/README.md](Tests/README.md). Normal app builds exclude the synthetic CloudKit test screen. Test launches can edit playback history unless `--no-playback-history` is supplied; normal launches perform no test actions.
 
-## Sync via iCloud
+Keep these records for future codec work:
 
-**Settings → Sync via iCloud** is enabled by default. It synchronizes saved connection profiles (server/port, account, domain, preferred share and encrypted password), favorites, playback positions/resets and Display all files. The switch itself, navigation/focus state and sync diagnostics stay device-local. Turning sync off keeps local data and queues subsequent edits; re-enabling merges them with iCloud. Settings shows sync status, last success and Sync now.
+- [Verification history](Tests/verification.txt)
+- [VP9 streaming/cache investigation](Tests/VP9-streaming-investigation.md)
+- [Native VP9 compatibility](Tests/Native-VP9-investigation.md)
+- [Streaming remux results, GMPlayer comparison and limits](Tests/Streaming-remux-investigation.md)
+- [Native AAC compatibility](Tests/Native-audio-compatibility.md)
 
-`Shared/ICloudSync.swift` uses CKSyncEngine with the private container `iCloud.com.example.BoraMin`, zone `BoraMinUserData-v1`, and encrypted `BoraMinUserData` record fields. The generator retains CloudKit entitlements in `Config/BoraMin.entitlements`. These development-signed installs use CloudKit's Development environment; promote the schema and use production provisioning before App Store distribution.
+## Repository layout
 
-Existing data is merged record by record after fetching the cloud, rather than replacing it with an empty first-run snapshot. Playback keeps 15-second local checkpoints and coalesces ordinary cloud updates; pause, exit, backgrounding and reset request prompt sync. Cloud delivery is asynchronous and doesn't seek a currently playing video. Reset/completion and removals use explicit versioned states so older offline edits do not resurrect cleared data. Local history remains limited to 500 active positions.
+- `BoraMin.xcodeproj`: shared native iOS, tvOS and macOS targets and schemes.
+- `testflight.md`: routine beta build, Organizer upload and tester-group instructions.
+- `Player/`: shared SMB/browser models, transport/demux/decoder code and iOS/tvOS browser/player views.
+- `Shared/`: production iCloud sync.
+- `iOS/`: native iOS application entry, entitlements and platform notes.
+- `MacOS/`: native Mac interface and AVKit adapter.
+- `Assets/`: editable Icon Composer asset and tvOS layered icon catalog. `Assets/BoraMin.icon/Assets` contains the authoritative icon layers; `boramin-icon.png` is the original artwork. The Mac app has a standard icon catalog. tvOS includes standard and wide static Top Shelf assets; regenerate them from the existing layered artwork with `swift tools/create_tvos_topshelf.swift "$PWD"`.
+- `Tests/`, `docs/`, `tools/`: regression fixtures/probes, investigation notes and build/test helpers.
+- `vendor/`: dependency sources/notices and ignored generated FFmpeg libraries.
 
-The full sync metadata is a recoverable cache. A bounded password-free outbox in preferences preserves pending changes across tvOS cache eviction; passwords are resolved from device-only Keychain when uploading and stored there after download. The TV currently uses its default iCloud account. Account changes pause sync to prevent mixing users; switching Apple TV profiles and migrating to per-profile cloud stores is separate work.
+`build/` contains ignored products, diagnostics, generated media and helper-created archives/exports. Preserve release archives and dSYMs needed for crash symbolication before cleaning it or overwriting an archive. Xcode Organizer archives are normally stored separately under Xcode’s user Archives directory. Local `default_*.txt` files are ignored and never read or bundled by the apps or project generators.
 
-The [iOS app on test device](SyncTest/README.md) now uses the same browser, SMB streaming player and production stores. It supports Files, Favorites, Settings, native playback controls, hardware VP9, saved positions/resume and iCloud sync. The installed companion bundle identity is retained to preserve data. The earlier isolated synthetic probe remains available through its launch flags.
+### Native SMB playback
 
-## App icons
-
-`Assets/BoraMin.icon` is the editable Icon Composer asset for iOS, built from the supplied `boramin-icon.png`: the baked checkerboard and rounded background were removed, and the mark/play symbol became separate transparent foreground layers over a purple system gradient. `Assets/BoraMin-preview.png` is its exported default appearance. The tvOS asset catalog uses the same artwork in three layers (play, mark, background), with native parallax and small/large icon sizes.
-
-## Playback orientation and Favorites
-
-iOS standard video playback uses AVKit's built-in pinch gesture for fit/fill, starting in aspect-fit for each video. No custom zoom recognizer is installed. VP9 remains aspect-fit in its separate display layer.
-
-When a video finishes on iOS or tvOS, the system playback-end notification clears its saved position and dismisses the player to the previous browser screen. Dismissal cannot recreate the completed bookmark.
-
-Settings → **Show Debug Info** is off by default and syncs with other preferences when iCloud sync is enabled. When enabled before opening a video, a noninteractive middle-right panel shows SMB payload transfer speed (MB/s over roughly the last second), resident compressed cache usage/capacity (MiB), source resolution/frame rate, and decoder status. Small white caption text sits on a 65%-opaque black background. Network/cache values describe our SMB transport, including repeated reads, rather than encoded bitrate or buffered seconds; local test files show these as not applicable. VP9 hardware use is confirmed; AVPlayer hardware/software selection remains unknown.
-
-On iOS, playback supports landscape left/right only and requests landscape for its full-screen presentation; leaving playback restores normal menu rotation. Menus continue supporting portrait. Press and hold a favorite on iOS or Apple TV to choose **Remove favorite**. Removal is persisted and syncs through iCloud. Favorites sort by displayed name using natural alphabetical order (for example, Folder 2 before Folder 10), including when records arrive from iCloud in a different order.
-
-## Browser background scope
-
-Black list styling is local to the browser. tvOS uses the public UIAppearance containment API scoped to its explicit `UIHostingController<BrowserScreen>`; there is no global UICollectionView background override or AVKit-specific exception. iOS hides each browser list's system backdrop with SwiftUI's `scrollContentBackground(.hidden)` over a black background. Native row focus/selection and playback controls retain their system styling.
-
-## Watching
-
-**Watching** sits between Favorites and Settings on tvOS and iOS. Its standard list includes every unfinished video with a saved position, newest **last-save timestamp** first. No exact open-time timestamp is recorded. Rows show the usual percentage/time prefix and filename, and selection reconnects to the original SMB location and resumes through the existing native player. Reset playback and completion remove the item from Watching. Its browser session is separate from Files and Favorites.
-
-Video location metadata syncs in encrypted CloudKit records alongside the existing bookmark records; passwords stay in Keychain. Older bookmarks contain only a hash, progress and last-save time, so their filenames cannot be reconstructed directly. Watching attempts shallow reads of saved favorite folders to recover matching locations; browsing folders in Files/Favorites also recovers metadata without changing progress or sort time. Unresolved legacy bookmarks remain visible with a saved-video identifier and an instruction to open their folder. A changed file size requires reopening the file from Files to establish a new bookmark identity.
-
-Optional VP9 performance diagnostics: add `--vp9-diagnostics` to a CLI smoke-test launch to log clock/video timestamps, fetched bytes, thermal state, and decoded/queued/late frame counts. Add `--no-playback-history` to `--stream-smoke-test` to start at zero and avoid changing saved playback positions. Neither flag changes decoder choice or buffering policy; normal launches omit them.
-
-The [iPhone VP9 streaming investigation](Tests/VP9-streaming-investigation.md) records controlled cache experiments. Normal playback now uses the approved 128 MiB cache for all streaming formats on iOS and tvOS. Test-only cache/read-size overrides remain available; the proposed lock change has not been applied.
+MP4, M4V and MOV streaming uses AVFoundation's resource-loader API on iOS, tvOS and macOS. The loader serves unchanged bytes through the existing 128 MiB SMB cache; AVPlayer handles parsing, decoding, controls, audio/subtitle selection and gestures. Files are not downloaded or remuxed first. Other native formats retain HTTP loading; MKV/WebM retain their existing demuxed playback path. Native playback selects the first supported audio option and reports an error if audio exists but none is supported.
