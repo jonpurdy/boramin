@@ -62,9 +62,40 @@ import Foundation
         store.save(100, duration: 100, for: key)
         precondition(reopened.watching().isEmpty)
 
+        let subtitle = SavedSubtitleSelection(kind: .external, filename: "movie.ass")
+        store.saveSubtitle(subtitle, for: key)
+        precondition(store.subtitleSelection(for: key) == nil && store.progress(for: key) == nil)
+        store.save(20, duration: 100, for: key, subtitle: subtitle)
+        precondition(reopened.subtitleSelection(for: key) == subtitle)
+        store.save(25, duration: 100, for: key)
+        precondition(reopened.subtitleSelection(for: key) == subtitle)
+        let off = SavedSubtitleSelection(kind: .off)
+        store.saveSubtitle(off, for: key)
+        precondition(reopened.subtitleSelection(for: key) == off)
+        store.clear(key)
+        precondition(defaults.dictionary(forKey: PlaybackPositions.subtitleStorageKey)?[key] == nil)
+        store.save(20, duration: 100, for: key, subtitle: subtitle)
+        store.save(100, duration: 100, for: key)
+        precondition(store.subtitleSelection(for: key) == nil)
+        // Simulate the optional field on an incoming encrypted position payload.
+        store.save(30, duration: 100, for: key)
+        let recordTime = store.watching().first!.lastSaved
+        store.applySyncedSubtitle(subtitle.encoded, for: key)
+        precondition(store.subtitleSelection(for: key) == subtitle && store.watching().first!.lastSaved == recordTime)
+        store.applySyncedSubtitle(nil, for: key) // Legacy client / no subtitle choice.
+        precondition(store.subtitleSelection(for: key) == nil)
+        store.applySyncedSubtitle("invalid JSON", for: key)
+        precondition(store.subtitleSelection(for: key) == nil)
+        store.clear(key)
+        store.applySyncedSubtitle(subtitle.encoded, for: key)
+        precondition(store.subtitleSelection(for: key) == nil && store.progress(for: key) == nil)
+        store.save(1, duration: 100, for: "old-subtitle", subtitle: subtitle)
+
         for index in 0..<505 { store.save(Double(index + 1), duration: 1000, for: "file\(index)") }
         precondition((defaults.dictionary(forKey: "playbackPositions.v1")?.count ?? 0) == 500)
         precondition(store.progress(for: "file504") != nil)
+        precondition(defaults.dictionary(forKey: PlaybackPositions.subtitleStorageKey)?.isEmpty == true)
+        print("PASS: subtitle identity persistence, no orphan selections, Off, cloud-field apply/legacy compatibility, reset/completion cleanup and eviction")
         print("PASS: persistent bookmarks, Watching metadata and last-save order, legacy recovery without timestamp changes, reset/completion removal and bounded storage")
     }
 }

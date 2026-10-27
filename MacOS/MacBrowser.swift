@@ -16,6 +16,7 @@ struct MacLibraryView: View {
     @State private var favoriteSelection = Set<String>()
     @State private var watchingSelection = Set<String>()
     @State private var watching: [WatchingVideo] = []
+    @State private var watchingFileToDelete: PlaybackFile?
     @State private var search = ""
     @Environment(\.scenePhase) private var phase
 
@@ -92,12 +93,23 @@ struct MacLibraryView: View {
             if let item = watching.first(where: { ids.contains($0.id) }) {
                 if let file = item.file { Button("Resume") { library.watchingBrowser.openWatching(file) } }
                 Button("Reset Playback") { PlaybackPositions.shared.clear(item.id); refreshSavedLists() }
+                if let file = item.file {
+                    Button("Delete File…", role: .destructive) { watchingFileToDelete = file }
+                        .disabled(library.watchingBrowser.busy)
+                }
             }
         } primaryAction: { ids in
             if let file = watching.first(where: { ids.contains($0.id) })?.file { library.watchingBrowser.openWatching(file) }
         }
         .overlay { if watching.isEmpty { ContentUnavailableView("Nothing in Progress", systemImage: "play.rectangle", description: Text("Videos you leave unfinished appear here, most recently saved first.")) } }
         .navigationTitle("Watching")
+        .alert("Delete File?", isPresented: Binding(get: { watchingFileToDelete != nil }, set: { if !$0 { watchingFileToDelete = nil } }), presenting: watchingFileToDelete) { file in
+            Button("Delete", role: .destructive) {
+                library.watchingBrowser.deleteWatchingFile(file) { refreshSavedLists() }
+                watchingFileToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { watchingFileToDelete = nil }
+        } message: { file in Text("Permanently delete \(file.name) from the server? This cannot be undone.") }
     }
     private func openFavorite(_ item: FavoriteLocation) {
         let browser = library.favoritesBrowser

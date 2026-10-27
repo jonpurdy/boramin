@@ -136,12 +136,14 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         }
         let bookmarks = defaults.dictionary(forKey:"playbackPositions.v1") as? [String:[String:Double]] ?? [:]
         let resets = defaults.dictionary(forKey:"playbackResets.v1") as? [String:Double] ?? [:]
+        let subtitles = defaults.dictionary(forKey: PlaybackPositions.subtitleStorageKey) as? [String: String] ?? [:]
         for (key, value) in bookmarks {
             guard let seconds=value["seconds"], let duration=value["duration"], let updated=value["updated"],
                   seconds.isFinite, duration.isFinite, updated.isFinite, seconds>0, seconds<duration else { continue }
             if (resets[key] ?? 0) >= updated { continue }
-            result[id("position",key)] = Snapshot(kind:"position",fields:
-                ["key":key,"seconds":String(seconds),"duration":String(duration)],state:"inProgress",updated:Date(timeIntervalSince1970:updated))
+            var fields = ["key":key,"seconds":String(seconds),"duration":String(duration)]
+            fields["subtitle"] = SavedSubtitleSelection.decode(subtitles[key])?.encoded
+            result[id("position",key)] = Snapshot(kind:"position", fields: fields, state:"inProgress", updated:Date(timeIntervalSince1970:updated))
         }
         for (key, file) in PlaybackPositions.shared.allFiles() where result[id("position", key)]?.state == "inProgress" {
             var fields = file.fields
@@ -194,7 +196,9 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         if !initial {
             for (key, old) in observed where current[key] == nil {
                 if old.kind == "position" && old.state == "reset" { continue }
-                let value = Value(id:key,kind:old.kind,fields:old.fields,state:old.kind == "position" ? "reset":"deleted",updated:Date(),operation:UUID().uuidString)
+                var fields = old.fields
+                if old.kind == "position" { fields.removeValue(forKey: "subtitle") }
+                let value = Value(id:key,kind:old.kind,fields:fields,state:old.kind == "position" ? "reset":"deleted",updated:Date(),operation:UUID().uuidString)
                 state.items[key] = Item(value:value,systemFields:state.items[key]?.systemFields)
                 state.pending.insert(key); urgent=true; changed=true
             }
@@ -387,6 +391,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
                 for key in resets.keys.sorted(by:{ resets[$0]! > resets[$1]! }).dropFirst(500) { resets.removeValue(forKey:key) }
             }
             defaults.set(positions,forKey:"playbackPositions.v1"); defaults.set(resets,forKey:"playbackResets.v1")
+            PlaybackPositions(defaults: defaults).applySyncedSubtitle(value.state == "inProgress" ? f["subtitle"] : nil, for: key)
         case "setting":
             if let value=f["displayAllFiles"] { defaults.set(value == "true",forKey:"displayAllFiles") }
             if let value=f["showDebugInfo"] { defaults.set(value == "true",forKey:"showDebugInfo") }
@@ -417,6 +422,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
                     let key=deletion.recordID.recordName
                     if var item=state.items[key] {
                         item.value.state=item.value.kind == "position" ? "reset":"deleted"
+                        if item.value.kind == "position" { item.value.fields.removeValue(forKey: "subtitle") }
                         item.value.updated=Date(); item.value.operation=UUID().uuidString
                         try apply(item.value); state.items[key]=item
                     }

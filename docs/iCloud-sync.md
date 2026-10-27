@@ -75,4 +75,4 @@ Adding the user-management entitlement may change which local preferences contai
 
 ## Production deployment
 
-On October 22, 2026 the reviewed schema was deployed through CloudKit Console, without copying development records. Production shows `BoraMinUserData.payload` as Encrypted Bytes and `password` as Encrypted String. The local Mac App Store Connect export was verified to use Production CloudKit and production APNs. Normal development builds remain on Development. See [TestFlight preparation](TestFlight.md) for the export workflow, validation and remaining environment-isolation limits.
+On October 22, 2026 the reviewed schema was deployed through CloudKit Console, without copying development records. Production shows `BoraMinUserData.payload` as Encrypted Bytes and `password` as Encrypted String. The local Mac App Store Connect export was verified to use Production CloudKit and production APNs. Normal development builds remain on Development. See [TestFlight preparation](../testflight.md) for the export workflow, validation and remaining environment-isolation limits.

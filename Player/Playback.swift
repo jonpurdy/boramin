@@ -1,4 +1,5 @@
 import AudioToolbox
+import Combine
 import OSLog
 import AVKit
 import SwiftUI
@@ -109,6 +110,7 @@ final class PreparedMedia: Identifiable {
     let streaming: StreamingSession?
     let keyframes: [Double]
     let positionKey: String?
+    @MainActor var subtitleSelection: SavedSubtitleSelection?
     let videoFormat: CMVideoFormatDescription?
 
     init(title: String, source: URL, timeline: URL, usesSampleBufferVideo: Bool, directory: URL,
@@ -174,6 +176,31 @@ final class PreparedMedia: Identifiable {
         let transport = try StreamingSession(source: source, fileExtension: (path as NSString).pathExtension)
         do {
             try await transport.start()
+            let subtitles = await ExternalSubtitles.discover(client: client, path: path, playbackCancellation: cancellation)
+            await transport.setExternalSubtitles(subtitles)
+            guard !cancellation.cancelled else { throw CancellationError() }
+            // Identify VP9 before the general MKV route, using the existing demuxer.
+            // If the legacy probe cannot read another MKV codec, let AetherEngine probe it.
+            let vp9MKV: Bool
+            if ext.lowercased() == "mkv" {
+                vp9MKV = try await Task.detached(priority: .userInitiated) {
+                    var info = MediaInfo(), error = [CChar](repeating: 0, count: 512)
+                    guard let reader = media_open_io(source.makeIO(), &info, &error, error.count) else {
+                        if cancellation.cancelled { throw CancellationError() }
+                        return false
+                    }
+                    defer { media_close(reader) }
+                    return info.vp9 != 0
+                }.value
+            } else { vp9MKV = false }
+            guard !cancellation.cancelled else { throw CancellationError() }
+            if !vp9MKV && !["mp4", "m4v", "mov", "webm"].contains(ext.lowercased()) {
+                let timeline = try await transport.configureAetherPlayback()
+                guard !cancellation.cancelled else { throw CancellationError() }
+                guard let info = await transport.aetherMediaInfo else { throw PlayerError("AetherEngine did not provide media information.") }
+                return Self(title: title, source: transport.sourceURL, timeline: timeline, usesSampleBufferVideo: false,
+                            directory: directory, info: info, streaming: transport, keyframes: [], positionKey: positionKey)
+            }
             let (info, keyframes, format) = try await Task.detached(priority: .userInitiated) {
                 var info = MediaInfo(), error = [CChar](repeating: 0, count: 512)
                 guard let reader = media_open_io(source.makeIO(), &info, &error, error.count) else {
@@ -181,12 +208,21 @@ final class PreparedMedia: Identifiable {
                     throw PlayerError("Read streaming media: \(String(cString: error))")
                 }
                 defer { media_close(reader) }
-                let demuxed = needsDemuxedPlayback(info, fileExtension: ext)
+                let aetherContainer = info.vp9 == 0 && ext.lowercased() == "webm"
+                let demuxed = needsDemuxedPlayback(info, fileExtension: ext) && !aetherContainer
                 let format = demuxed && !(info.vp9 != 0 && CommandLine.arguments.contains("--experimental-vp9-remux")) ? try validateDecoder(info, configuration: configuration(reader)) : nil
                 let keyframes = demuxed ? indexedKeyframes(reader) : []
                 return (info, keyframes, format)
             }.value
             if cancellation.cancelled { throw CancellationError() }
+            if info.vp9 == 0 && ext.lowercased() == "webm" {
+                let timeline = try await transport.configureAetherPlayback()
+                if cancellation.cancelled { throw CancellationError() }
+                playbackLog.notice("AetherEngine container streaming enabled")
+                return Self(title: title, source: transport.sourceURL, timeline: timeline, usesSampleBufferVideo: false,
+                            directory: directory, info: info, streaming: transport, keyframes: [], positionKey: positionKey)
+            }
+            if vp9MKV { playbackLog.notice("VP9 MKV using original hardware decoder and native AVKit controls") }
             let demuxed = needsDemuxedPlayback(info, fileExtension: ext)
             let experimental = CommandLine.arguments.contains("--experimental-vp9-remux") && info.vp9 != 0
             if experimental {
@@ -694,8 +730,14 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     private var ended: NSObjectProtocol?
     private var backgroundObserver: NSObjectProtocol?
     private var diagnosticsObservers: [NSObjectProtocol] = []
+    #if canImport(SwiftAssRenderer)
+    private var subtitleHost: UIHostingController<PlaybackSubtitleOverlay>?
+    private var tracksHost: UIHostingController<PlaybackTracksButton>?
+    private var tracks: PlaybackTracks?
+    #endif
     #if os(tvOS)
     private var displayManager: AVDisplayManager?
+    private var tracksMenuSubscription: AnyCancellable?
     #endif
     private var startup: Task<Void, Never>?
     private var clockObserver: Any?
@@ -705,16 +747,12 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     private var probeOutput: AVPlayerItemVideoOutput?
     private var probeBegan = 0.0
     private var playbackObservation: NSKeyValueObservation?
-    private var decodingLabel: UILabel?
-    private var decodingLabelTask: Task<Void, Never>?
     private var debugPanel: UIView?
     private var debugLabel: UILabel?
     private var debugTimer: Timer?
     private let debugStats = PlaybackDebugStats()
     private var debugSampleTime = 0.0
     private var debugSampleBytes: Int64 = 0
-    private var hardwareFrameReady = false
-    private var showedDecodingLabel = false
     var onFailure: ((String) -> Void)?
     var onDismiss: (() -> Void)?
     private var began = false
@@ -773,7 +811,9 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         if !media.usesSampleBufferVideo { videoGravity = .resizeAspect }
         #endif
         let item: AVPlayerItem
-        if media.usesSampleBufferVideo, let streaming = media.streaming {
+        if let native = media.streaming?.aetherPlayer, let current = native.currentItem {
+            item = current
+        } else if media.usesSampleBufferVideo, let streaming = media.streaming {
             do {
                 let loader = try streaming.makeAudioLoader(); audioLoader = loader
                 item = AVPlayerItem(asset: loader.makeAsset())
@@ -796,7 +836,22 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         let title = AVMutableMetadataItem()
         title.identifier = .commonIdentifierTitle; title.value = media.title as NSString
         item.externalMetadata = [title]
-        player = AVPlayer(playerItem: item)
+        player = media.streaming?.aetherPlayer ?? AVPlayer(playerItem: item)
+        #if canImport(SwiftAssRenderer)
+        let tracks = PlaybackTracks(media: media); self.tracks = tracks
+        tracks.bind(player: player)
+        installStyledSubtitleOverlay()
+        #endif
+        #if canImport(AetherEngine)
+        observeAetherItemChanges()
+        #if os(tvOS)
+        if let tracks = self.tracks {
+            tracksMenuSubscription = tracks.menuChanges.debounce(for: .milliseconds(50), scheduler: RunLoop.main)
+                .sink { [weak self] in self?.refreshTransportMenu() }
+            refreshTransportMenu()
+        }
+        #endif
+        #endif
         if !media.usesSampleBufferVideo {
             // Native assets expose their audible/legible media-selection groups
             // directly to AVKit's built-in audio and subtitle controls.
@@ -835,16 +890,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             self?.savePosition()
         }
-        ended = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
-            DispatchQueue.main.async {
-                playbackLog.notice("BORAMIN_NATIVE playback reached end")
-                guard let self, self.active, !self.completedPlayback else { return }
-                self.completedPlayback = true
-                if let key = self.media.positionKey { PlaybackPositions.shared.clear(key) }
-                // Dismiss the existing full-screen presentation, preserving browser navigation.
-                self.onDismiss?()
-            }
-        }
+        observeCompletion(item)
         if media.usesSampleBufferVideo {
             let video = HardwareVideo(path: media.source.path, remote: media.streaming?.source)
             video.failure = { [weak self] message in
@@ -852,11 +898,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                 playbackLog.error("BORAMIN_ERROR \(message)"); self.player?.pause(); self.onFailure?(message)
             }
             self.video = video
-            video.firstFrame = { [weak self] in
-                self?.hardwareFrameReady = true
-                self?.showDecodingLabelIfPlaying()
-            }
-            contentOverlayView?.layer.addSublayer(video.layer)
+            contentOverlayView?.layer.insertSublayer(video.layer, at: 0)
             jump = NotificationCenter.default.addObserver(forName: AVPlayerItem.timeJumpedNotification, object: item, queue: .main) { [weak self] _ in
                 self?.media.streaming?.updateClock(item.currentTime().seconds)
                 self?.video?.seek(to: item.currentTime().seconds)
@@ -889,7 +931,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                         guard !Task.isCancelled else { return }
                     }
                     guard !Task.isCancelled, self.active else { return }
-                    if !self.media.usesSampleBufferVideo {
+                    if !self.media.usesSampleBufferVideo && self.media.streaming?.aetherPlayer == nil {
                         do { try await NativeAudioSelection.selectFirstSupported(in: item) }
                         catch { guard self.active, !Task.isCancelled else { return }; self.onFailure?(error.localizedDescription); return }
                     }
@@ -943,7 +985,6 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                     NotificationCenter.default.post(name:Notification.Name("BoraMinPlaybackSync"),object:nil)
                 }
                 playbackLog.notice("Playback state session=\(self.media.id.uuidString, privacy: .public) state=\(self.player?.timeControlStatus.rawValue ?? -1) position=\(self.player?.currentTime().seconds ?? 0) waitingReason=\(self.player?.reasonForWaitingToPlay?.rawValue ?? "none", privacy: .public) bufferEmpty=\(item.isPlaybackBufferEmpty) likelyToKeepUp=\(item.isPlaybackLikelyToKeepUp)")
-                self.showDecodingLabelIfPlaying()
             }
         }
     }
@@ -983,7 +1024,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
               player.currentItem?.status == .readyToPlay else { return }
         let seconds = player.currentTime().seconds
         guard seconds.isFinite else { return }
-        PlaybackPositions.shared.save(seconds, duration: media.info.duration, for: key)
+        PlaybackPositions.shared.save(seconds, duration: media.info.duration, for: key, subtitle: media.subtitleSelection)
         playbackLog.debug("BORAMIN_RESUME saved \(seconds)s")
     }
     #if os(iOS)
@@ -996,6 +1037,9 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     }
     #endif
     override func viewWillDisappear(_ animated: Bool) {
+        #if canImport(AetherEngine)
+        if aetherRouteNeedsSoftwarePresentation { super.viewWillDisappear(animated); return }
+        #endif
         if isBeingDismissed || parent?.isBeingDismissed == true { player?.pause() }
         savePosition()
         NotificationCenter.default.post(name:Notification.Name("BoraMinPlaybackSync"),object:nil)
@@ -1058,41 +1102,72 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         label.text = ([network, cache, "Video: \(resolution), \(fps)", "Decoder: \(decoder)"] + debugStats.lines(item: player?.currentItem, video: video)).joined(separator: "\n")
         debugSampleTime = now
     }
-    private func showDecodingLabelIfPlaying() {
-        guard active, !showedDecodingLabel, player?.timeControlStatus == .playing,
-              !media.usesSampleBufferVideo || hardwareFrameReady, let overlay = contentOverlayView else { return }
-        // Only our VideoToolbox session reports actual HW/SW selection. AVPlayer
-        // does not expose it; never infer hardware use from codec capability.
-        let text = media.usesSampleBufferVideo && media.info.vp9 != 0 ? "Hardware Decoding" : "System Decoding (HW/SW unknown)"
-        showedDecodingLabel = true
-        let label = UILabel()
-        label.text = text
-        label.font = .preferredFont(forTextStyle: .headline)
-        label.textColor = .white
-        label.backgroundColor = .clear
-        label.isOpaque = false
-        label.layer.shadowColor = UIColor.black.cgColor
-        label.layer.shadowOpacity = 1
-        label.layer.shadowRadius = 3
-        label.layer.shadowOffset = CGSize(width: 0, height: 1)
-        label.isUserInteractionEnabled = false
-        label.translatesAutoresizingMaskIntoConstraints = false
-        overlay.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.topAnchor, constant: 24),
-            label.trailingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.trailingAnchor, constant: -32),
-            label.leadingAnchor.constraint(greaterThanOrEqualTo: overlay.safeAreaLayoutGuide.leadingAnchor, constant: 32)
-        ])
-        decodingLabel = label
-        let shownAt = ProcessInfo.processInfo.systemUptime
-        playbackLog.debug("BORAMIN_DECODING shown: \(text)")
-        decodingLabelTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .seconds(5)) } catch { return }
-            guard let self else { return }
-            self.decodingLabel?.removeFromSuperview(); self.decodingLabel = nil
-            playbackLog.debug("BORAMIN_DECODING hidden after \(ProcessInfo.processInfo.systemUptime - shownAt)s")
+    private func observeCompletion(_ item: AVPlayerItem) {
+        if let ended { NotificationCenter.default.removeObserver(ended) }
+        ended = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async {
+                playbackLog.notice("BORAMIN_NATIVE playback reached end")
+                guard let self, self.active, !self.completedPlayback else { return }
+                self.completedPlayback = true
+                if let key = self.media.positionKey { PlaybackPositions.shared.clear(key) }
+                // Dismiss the existing full-screen presentation, preserving browser navigation.
+                self.onDismiss?()
+            }
         }
     }
+    #if os(tvOS)
+    private func refreshTransportMenu() {
+        guard active, let tracks else { return }
+        let menu = tracks.menu()
+        transportBarCustomMenuItems = [menu]
+        playbackLog.notice("Track menu installed actions=\(menu.children.count) externalSubtitles=\(tracks.subtitles.tracks.count)")
+    }
+    #endif
+    #if canImport(AetherEngine)
+    private func observeAetherItemChanges() {
+        guard let backend = media.streaming?.aetherPlayback else { return }
+        backend.onItemChanged = { [weak self, weak backend] player, item in
+            guard let self, self.active, let backend else { return }
+            if let token = self.clockObserver { self.player?.removeTimeObserver(token); self.clockObserver = nil }
+            self.playbackObservation = nil
+            self.player = player
+            self.clockObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
+                guard let self, !self.stopped else { return }
+                self.media.streaming?.updateClock(time.seconds)
+                let now = ProcessInfo.processInfo.systemUptime
+                if CommandLine.arguments.contains("--vp9-diagnostics"), now - self.lastDiagnostic >= 2 {
+                    self.lastDiagnostic = now
+                    playbackLog.debug("BORAMIN_VP9_DIAG host=\(now) clock=\(time.seconds) rate=\(self.player?.rate ?? 0) control=\(self.player?.timeControlStatus.rawValue ?? -1) video=\(self.video?.queuedTime ?? -1) renderer=\(self.video?.layer.sampleBufferRenderer.status.rawValue ?? -1) fetched=\(self.media.streaming?.source.fetchedBytes ?? 0) thermal=\(ProcessInfo.processInfo.thermalState.rawValue) cache=\(self.media.streaming?.source.cacheDiagnostic ?? "local")")
+                }
+                if now - self.lastCheckpoint >= 15 {
+                    let metrics = self.media.streaming?.source.transferMetrics
+                    playbackLog.notice("Playback health session=\(self.media.id.uuidString, privacy: .public) position=\(time.seconds) state=\(self.player?.timeControlStatus.rawValue ?? -1) residentBytes=\(media_process_resident_bytes()) cacheBytes=\(metrics?.cached ?? 0) cacheCapacity=\(metrics?.capacity ?? 0) fetchedBytes=\(metrics?.fetched ?? 0) thermal=\(ProcessInfo.processInfo.thermalState.rawValue)")
+                    self.video?.logPerformance(sessionID: self.media.id)
+                    self.savePosition()
+                    self.lastCheckpoint = now
+                }
+            }
+            self.playbackObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+                DispatchQueue.main.async {
+                    guard let self, self.active else { return }
+                    if player.timeControlStatus == .playing { self.startedPlayback = true }
+                    if player.timeControlStatus == .paused { self.savePosition() }
+                }
+            }
+            self.observeCompletion(item)
+            self.readiness = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+                DispatchQueue.main.async {
+                    guard let self, self.active else { return }
+                    if item.status == .failed { self.onFailure?(item.error?.localizedDescription ?? "Audio track switch failed.") }
+                }
+            }
+            self.tracks?.bind(player: player)
+            #if os(tvOS)
+            self.refreshTransportMenu()
+            #endif
+        }
+    }
+    #endif
     private func exerciseResumeCompletion() async {
         guard let player, let key = media.positionKey else { return }
         do {
@@ -1112,7 +1187,39 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         } catch is CancellationError { }
         catch { print("BORAMIN_RESUME TEST FAILED: \(error.localizedDescription)") }
     }
-    override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); video?.layer.frame = contentOverlayView?.bounds ?? view.bounds }
+    #if canImport(SwiftAssRenderer)
+    private func installStyledSubtitleOverlay() {
+        guard let overlay = contentOverlayView else { return }
+        if media.streaming?.externalSubtitles != nil || media.streaming?.aetherPlayback?.styledSubtitles != nil {
+            let host = UIHostingController(rootView: PlaybackSubtitleOverlay(media: media))
+            host.view.backgroundColor = .clear; host.view.isUserInteractionEnabled = false
+            addChild(host); overlay.addSubview(host.view); host.didMove(toParent: self)
+            host.view.frame = overlay.bounds; host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            subtitleHost = host
+        }
+        #if os(iOS)
+        if let tracks {
+            let host = UIHostingController(rootView: PlaybackTracksButton(tracks: tracks))
+            host.view.backgroundColor = .clear; host.view.translatesAutoresizingMaskIntoConstraints = false
+            host.sizingOptions = .intrinsicContentSize
+            addChild(host); overlay.addSubview(host.view); host.didMove(toParent: self)
+            NSLayoutConstraint.activate([host.view.trailingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.trailingAnchor, constant: -20), host.view.topAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.topAnchor, constant: 12)])
+            tracksHost = host
+        }
+        #endif
+    }
+    #endif
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews(); video?.layer.frame = contentOverlayView?.bounds ?? view.bounds
+        #if canImport(SwiftAssRenderer)
+        if let host = subtitleHost {
+            host.view.frame = contentOverlayView?.bounds ?? view.bounds
+            #if os(iOS)
+            host.rootView = PlaybackSubtitleOverlay(media: media, videoRect: videoBounds)
+            #endif
+        }
+        #endif
+    }
     #if os(tvOS)
     func playerViewController(_ playerViewController: AVPlayerViewController, timeToSeekAfterUserNavigatedFrom oldTime: CMTime, to targetTime: CMTime) -> CMTime {
         let seconds = media.seekTime(targetTime.seconds)
@@ -1253,6 +1360,10 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                 try await probeFrame(target: target, after: began, label: "seek-\(requested)")
                 let before = player.currentTime().seconds
                 try await Task.sleep(for: .seconds(2))
+                let continuationDeadline = ProcessInfo.processInfo.systemUptime + 15
+                while player.currentTime().seconds <= before + 1 && ProcessInfo.processInfo.systemUptime < continuationDeadline {
+                    try await Task.sleep(for: .milliseconds(100))
+                }
                 guard player.currentTime().seconds > before + 1 else { throw PlayerError("Video timeline stalled after seek.") }
                 try await probeFrame(target: before + 1, after: began, label: "continued-\(requested)")
             }
@@ -1325,6 +1436,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         requestLandscape()
         #endif
         #if os(tvOS)
+        refreshTransportMenu()
         guard media.usesSampleBufferVideo else { return }
         let info = media.info
         if let format = media.videoFormat {
@@ -1334,28 +1446,43 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         }
         #endif
     }
-    func stop() {
+    #if canImport(AetherEngine)
+    var aetherRouteNeedsSoftwarePresentation: Bool {
+        guard let backend = media.streaming?.aetherPlayback else { return false }
+        return backend.engine.videoRoute == .software || backend.engine.videoRoute == .audio
+    }
+    #endif
+    func stop(preservingAetherSession: Bool = false) {
         guard !stopped else { return }
         playbackLog.notice("Playback closing session=\(self.media.id.uuidString, privacy: .public) position=\(self.player?.currentTime().seconds ?? 0) completed=\(self.completedPlayback)")
-        savePosition()
-        NotificationCenter.default.post(name:Notification.Name("BoraMinPlaybackSync"),object:nil)
+        if !preservingAetherSession {
+            savePosition()
+            NotificationCenter.default.post(name:Notification.Name("BoraMinPlaybackSync"),object:nil)
+        }
         stopped = true
         #if os(iOS)
         restoreMenuOrientation()
         #endif
         startup?.cancel(); startup = nil
-        decodingLabelTask?.cancel(); decodingLabelTask = nil
-        decodingLabel?.removeFromSuperview(); decodingLabel = nil
+        #if canImport(SwiftAssRenderer)
+        subtitleHost?.willMove(toParent: nil); subtitleHost?.view.removeFromSuperview(); subtitleHost?.removeFromParent(); subtitleHost = nil
+        tracksHost?.willMove(toParent: nil); tracksHost?.view.removeFromSuperview(); tracksHost?.removeFromParent(); tracksHost = nil
+        #if os(tvOS)
+        tracksMenuSubscription = nil
+        #endif
+        tracks?.stop(); tracks = nil
+        #endif
         debugPanel?.removeFromSuperview(); debugPanel = nil; debugLabel = nil
         debugTimer?.invalidate(); debugTimer = nil
         playbackObservation = nil
         exercise?.cancel(); exercise = nil
-        player?.pause(); video?.stop(); player?.replaceCurrentItem(with: nil)
+        if !preservingAetherSession { player?.pause(); player?.replaceCurrentItem(with: nil) }
+        video?.stop()
         video?.layer.removeFromSuperlayer(); video = nil
         audioLoader?.stop(); audioLoader = nil
         fileLoader?.stop(); fileLoader = nil
         if let clockObserver { player?.removeTimeObserver(clockObserver); self.clockObserver = nil }
-        media.streaming?.stop()
+        if !preservingAetherSession { media.streaming?.stop() }
         if let jump { NotificationCenter.default.removeObserver(jump); self.jump = nil }
         if let ended { NotificationCenter.default.removeObserver(ended); self.ended = nil }
         if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver); self.backgroundObserver = nil }
@@ -1369,7 +1496,6 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     }
     deinit {
         debugTimer?.invalidate()
-        decodingLabelTask?.cancel()
         if let jump { NotificationCenter.default.removeObserver(jump) }
         if let ended { NotificationCenter.default.removeObserver(ended) }
         if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
@@ -1378,7 +1504,24 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     }
 }
 
-struct NativePlayer: UIViewControllerRepresentable {
+struct NativePlayer: View {
+    let media: PreparedMedia
+    let failure: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        #if canImport(AetherEngine)
+        if let backend = media.streaming?.aetherPlayback {
+            AetherPlaybackPresentation(media: media, backend: backend, close: { dismiss() }, failure: failure)
+        } else {
+            NativeAVPlayer(media: media, failure: failure)
+        }
+        #else
+        NativeAVPlayer(media: media, failure: failure)
+        #endif
+    }
+}
+
+struct NativeAVPlayer: UIViewControllerRepresentable {
     let media: PreparedMedia
     let failure: (String) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -1388,6 +1531,13 @@ struct NativePlayer: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: NativePlayerController, context: Context) { }
-    static func dismantleUIViewController(_ controller: NativePlayerController, coordinator: ()) { controller.stop() }
+    static func dismantleUIViewController(_ controller: NativePlayerController, coordinator: ()) {
+        #if canImport(AetherEngine)
+        let route = controller.aetherRouteNeedsSoftwarePresentation
+        controller.stop(preservingAetherSession: route)
+        #else
+        controller.stop()
+        #endif
+    }
 }
 #endif

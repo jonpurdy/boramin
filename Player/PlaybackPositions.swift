@@ -1,6 +1,40 @@
 import Foundation
 import CryptoKit
 
+/// Portable subtitle identity stored only alongside an unfinished bookmark.
+struct SavedSubtitleSelection: Codable, Equatable {
+    enum Kind: String, Codable { case off, external, engine, native }
+    let kind: Kind
+    var filename: String?
+    var stream: Int?
+    var name: String?
+    var language: String?
+    var codec: String?
+    var nativePropertyList: Data?
+    var nativeSubtypes: [UInt32]?
+    var forced: Bool?
+    var encoded: String? {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        guard let bytes = try? encoder.encode(self), bytes.count <= 65536 else { return nil }
+        return String(data: bytes, encoding: .utf8)
+    }
+    static func decode(_ value: String?) -> Self? {
+        guard let value, let bytes = value.data(using: .utf8), bytes.count <= 65536,
+              let result = try? JSONDecoder().decode(Self.self, from: bytes) else { return nil }
+        switch result.kind {
+        case .off: return result
+        case .external:
+            guard let filename = result.filename, !filename.isEmpty, filename.utf8.count <= 4096,
+                  (filename as NSString).lastPathComponent == filename else { return nil }
+        case .engine:
+            guard let stream = result.stream, stream >= 0, result.codec != nil else { return nil }
+        case .native:
+            guard result.nativePropertyList != nil || result.name != nil else { return nil }
+        }
+        return result
+    }
+}
+
 struct PlaybackProgress {
     let seconds: Double
     let duration: Double
@@ -17,6 +51,7 @@ struct PlaybackProgress {
     private let defaults: UserDefaults
     private let storageKey = "playbackPositions.v1"
     private let limit = 500
+    static let subtitleStorageKey = "playbackSubtitles.v1"
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
@@ -52,7 +87,7 @@ struct PlaybackProgress {
         return PlaybackProgress(seconds: seconds, duration: duration)
     }
 
-    func save(_ seconds: Double, duration: Double, for key: String) {
+    func save(_ seconds: Double, duration: Double, for key: String, subtitle: SavedSubtitleSelection? = nil) {
         guard seconds.isFinite, duration.isFinite, duration > 0, seconds >= 0 else { return }
         guard seconds > 0, seconds < duration else { clear(key); return }
         var records = defaults.dictionary(forKey: storageKey) as? [String: [String: Double]] ?? [:]
@@ -62,6 +97,10 @@ struct PlaybackProgress {
             for key in oldest.prefix(records.count - limit) { records.removeValue(forKey: key) }
         }
         defaults.set(records, forKey: storageKey)
+        var subtitles = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
+        if let encoded = subtitle?.encoded { subtitles[key] = encoded }
+        subtitles = subtitles.filter { records[$0.key] != nil }
+        defaults.set(subtitles, forKey: Self.subtitleStorageKey)
         var resets=defaults.dictionary(forKey:"playbackResets.v1") as? [String:Double] ?? [:]
         if resets.removeValue(forKey:key) != nil { defaults.set(resets,forKey:"playbackResets.v1") }
     }
@@ -70,12 +109,31 @@ struct PlaybackProgress {
         var records = defaults.dictionary(forKey: storageKey) ?? [:]
         records.removeValue(forKey: key)
         defaults.set(records, forKey: storageKey)
+        var subtitles = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
+        subtitles.removeValue(forKey: key)
+        defaults.set(subtitles, forKey: Self.subtitleStorageKey)
         var resets=defaults.dictionary(forKey:"playbackResets.v1") as? [String:Double] ?? [:]
         resets[key]=Date().timeIntervalSince1970
         if resets.count>500 {
             for key in resets.keys.sorted(by:{ resets[$0]! > resets[$1]! }).dropFirst(500) { resets.removeValue(forKey:key) }
         }
         defaults.set(resets,forKey:"playbackResets.v1")
+    }
+    func subtitleSelection(for key: String) -> SavedSubtitleSelection? {
+        guard progress(for: key) != nil else { return nil }
+        return SavedSubtitleSelection.decode(defaults.dictionary(forKey: Self.subtitleStorageKey)?[key] as? String)
+    }
+    /// Selecting subtitles never creates a Watching entry on its own.
+    func saveSubtitle(_ selection: SavedSubtitleSelection, for key: String) {
+        guard let progress = progress(for: key), subtitleSelection(for: key) != selection else { return }
+        save(progress.seconds, duration: progress.duration, for: key, subtitle: selection)
+    }
+    /// Apply the subtitle field from the SAME cloud position record, retaining its timestamp.
+    func applySyncedSubtitle(_ encoded: String?, for key: String) {
+        var subtitles = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
+        subtitles[key] = progress(for: key) == nil ? nil : SavedSubtitleSelection.decode(encoded)?.encoded
+        let active = Set(allProgress().keys)
+        defaults.set(subtitles.filter { active.contains($0.key) }, forKey: Self.subtitleStorageKey)
     }
 }
 
@@ -88,7 +146,10 @@ struct PlaybackFile: Codable, Equatable {
     let username: String
     let domain: String
     var name: String { (path as NSString).lastPathComponent }
-    var location: String { "\(server)/\(share)/\(path)" }
+    var folderLocation: String {
+        let folder = (path as NSString).deletingLastPathComponent
+        return folder.isEmpty ? "\(server)/\(share)" : "\(server)/\(share)/\(folder)"
+    }
     var key: String { PlaybackPositions.key(server: URL(string: server)!, share: share, path: path, size: size) }
     var fields: [String: String] {
         ["server": server, "share": share, "path": path, "size": String(size), "username": username, "domain": domain]

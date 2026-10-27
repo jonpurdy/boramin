@@ -12,7 +12,11 @@ struct MacSettingsView: View {
                 Toggle("Display all files", isOn: $allFiles)
                 Text("When disabled, show folders and supported media file types.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("Playback") { Toggle("Show Debug Info", isOn: $debug) }
+            Section("Playback") {
+                SubtitleSizeSetting()
+                Text("For external and ASS/SSA subtitles. Native captions use system settings. Saved on this device.").font(.caption).foregroundStyle(.secondary)
+                Toggle("Show Debug Info", isOn: $debug)
+            }
             Section("iCloud") {
                 Toggle("Sync via iCloud", isOn: Binding(get: { cloud.enabled }, set: { cloud.setEnabled($0) }))
                 Text(cloud.status).font(.caption).foregroundStyle(.secondary)

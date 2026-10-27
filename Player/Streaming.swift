@@ -2,6 +2,7 @@ import OSLog
 import Foundation
 import Network
 import AMSMB2
+import AVFoundation
 
 private let streamingLog = Logger(subsystem: "com.example.BoraMin", category: "Streaming")
 
@@ -57,11 +58,18 @@ final class SMBRemoteFile: @unchecked Sendable {
     }
 
     /// Called only on worker queues. Serialize cache fills while libsmb2 runs on its own queue.
-    func read(offset: Int64, count: Int) throws -> Data {
+    func read(offset: Int64, count: Int, interrupt: CancellationFlag? = nil) throws -> Data {
         guard !cancellation.cancelled else { throw CancellationError() }
         guard offset >= 0, count > 0 else { throw PlayerError("Invalid SMB byte range.") }
         guard offset < size else { return Data() }
-        lock.lock(); defer { lock.unlock() }
+        if let interrupt {
+            while !lock.try() {
+                if cancellation.cancelled || interrupt.cancelled { throw CancellationError() }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        } else { lock.lock() }
+        defer { lock.unlock() }
+        guard interrupt?.cancelled != true else { throw CancellationError() }
         guard !cancellation.cancelled else { throw CancellationError() }
         let block = offset / blockSize
         let start = block * blockSize
@@ -82,7 +90,7 @@ final class SMBRemoteFile: @unchecked Sendable {
             // The SMB client has a connection timeout; leave its callback's captured state alive
             // if cancellation lets this worker return before a pending read finishes.
             while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
-                if cancellation.cancelled { throw CancellationError() }
+                if cancellation.cancelled || interrupt?.cancelled == true { throw CancellationError() }
             }
             do { data = try result.value!.get() }
             catch {
@@ -223,6 +231,25 @@ final class StreamingSession: @unchecked Sendable {
     private let audioLock = NSLock()
     private var audio: StreamingAudio?
     private var playbackSeconds = 0.0
+    #if canImport(AetherEngine)
+    @MainActor private(set) var aetherPlayback: AetherMKVPlayback?
+    @MainActor var externalSubtitles: ExternalSubtitles?
+    #endif
+    @MainActor func setExternalSubtitles(_ subtitles: ExternalSubtitles?) { externalSubtitles = subtitles }
+    @MainActor var aetherMediaInfo: MediaInfo? {
+        #if canImport(AetherEngine)
+        return aetherPlayback?.info
+        #else
+        return nil
+        #endif
+    }
+    @MainActor var aetherPlayer: AVPlayer? {
+        #if canImport(AetherEngine)
+        return aetherPlayback?.player
+        #else
+        return nil
+        #endif
+    }
     private var experimentalRemux: ExperimentalRemux?
     private let stopLock = NSLock()
     private var stopped = false
@@ -237,6 +264,17 @@ final class StreamingSession: @unchecked Sendable {
     var sourceURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/source.\(ext)")! }
     var audioURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/audio.caf")! }
     var experimentalRemuxURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/remux/index.m3u8")! }
+    @MainActor func configureAetherPlayback() async throws -> URL {
+        #if canImport(AetherEngine)
+        let playback = try await AetherMKVPlayback.open(source: source, fileExtension: ext)
+        guard !source.cancellation.cancelled else { playback.stop(); throw CancellationError() }
+        aetherPlayback = playback
+        externalSubtitles?.bind(player: playback.player, backend: playback)
+        return sourceURL // Identity only: the controller uses the engine-owned player.
+        #else
+        throw PlayerError("AetherEngine is not linked in this test harness.")
+        #endif
+    }
     func configureExperimentalRemux(info: MediaInfo, keyframes: [Double]) throws {
         experimentalRemux = try ExperimentalRemux(source: source, info: info, keyframes: keyframes)
     }
@@ -307,6 +345,9 @@ final class StreamingSession: @unchecked Sendable {
         if stopped { stopLock.unlock(); return }
         stopped = true; stopLock.unlock()
         source.cancellation.cancel()
+        #if canImport(AetherEngine)
+        Task { @MainActor [self] in externalSubtitles?.stop(); externalSubtitles = nil; aetherPlayback?.stop(); aetherPlayback = nil }
+        #endif
         experimentalRemux?.stop()
         audioLock.lock(); let audio = audio; audioLock.unlock(); audio?.stop()
         queue.async { [self] in

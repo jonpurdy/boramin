@@ -23,7 +23,7 @@ struct BrowserEntry: Identifiable {
         let sizeText = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
         return durationText.map { "\($0) · \(sizeText)" } ?? sizeText
     }
-    var playable: Bool { ["mp4", "m4v", "mov", "mkv", "webm", "avi", "ts", "m2ts"].contains((name as NSString).pathExtension.lowercased()) }
+    var playable: Bool { ["mp4", "m4v", "mov", "mkv", "webm", "avi", "ts", "m2ts", "mts", "mpg", "mpeg", "vob", "wmv", "asf", "flv", "ogv", "ogg", "rm", "rmvb", "3gp", "3g2"].contains((name as NSString).pathExtension.lowercased()) }
 }
 
 @MainActor final class Browser: ObservableObject {
@@ -467,6 +467,28 @@ struct BrowserEntry: Identifiable {
             entries.removeAll { $0.path == entry.path }
         }
     }
+    func deleteWatchingFile(_ file: PlaybackFile, onDelete: @escaping () -> Void) {
+        guard !busy, playing == nil else { return }
+        perform("Deleting file…", invalidateConnectionOnFailure: false) {
+            guard let url = URL(string: file.server),
+                  let manager = SMB2Manager(url: url, domain: file.domain, credential: URLCredential(
+                    user: file.username.isEmpty ? "guest" : file.username,
+                    password: ConnectionPreferences.shared.password(address: file.server, username: file.username, domain: file.domain) ?? "",
+                    persistence: .none)) else { throw PlayerError("Invalid saved video location.") }
+            manager.timeout = 20
+            defer { Task { try? await manager.disconnectShare(gracefully: true) } }
+            try await manager.connectShare(name: file.share)
+            let attributes = try await manager.attributesOfItem(atPath: file.path)
+            guard attributes[.fileResourceTypeKey] as? URLFileResourceType == .regular,
+                  (attributes[.fileSizeKey] as? NSNumber)?.int64Value == file.size else {
+                throw PlayerError("This file has changed. Open its folder in Files before deleting it.")
+            }
+            try await manager.removeFile(atPath: file.path)
+            PlaybackPositions.shared.clear(file.key)
+            onDelete()
+            NotificationCenter.default.post(name: Notification.Name("BoraMinPlaybackSync"), object: nil)
+        }
+    }
     func resetPlayback(_ entry: BrowserEntry) {
         guard !busy, playing == nil, entry.playable, let client else { return }
         let key = PlaybackPositions.key(server: client.url, share: share, path: entry.path, size: entry.size)
@@ -512,11 +534,33 @@ struct BrowserEntry: Identifiable {
 
 #if os(tvOS) || os(iOS)
 struct BrowserScreen: View {
+    private var listPrimaryFont: Font? {
+        #if os(tvOS)
+        .headline.weight(.regular)
+        #else
+        nil
+        #endif
+    }
+    private var listSecondaryFont: Font {
+        #if os(tvOS)
+        .body
+        #else
+        .caption
+        #endif
+    }
+    private var fileDetailsFont: Font? {
+        #if os(tvOS)
+        .body
+        #else
+        nil
+        #endif
+    }
     private enum Destination: Hashable { case files, favorites, favoriteFiles(FavoriteLocation), watching, settings, connectionSetup }
     @StateObject private var filesBrowser = Browser()
     @StateObject private var favoriteBrowser = Browser()
     @StateObject private var watchingBrowser = Browser()
     @State private var watching = PlaybackPositions.shared.watching()
+    @State private var watchingFileToDelete: PlaybackFile?
     @StateObject private var favorites = Favorites()
     @StateObject private var cloud = ICloudSync.shared
     @State private var navigation: [Destination] = []
@@ -705,7 +749,7 @@ struct BrowserScreen: View {
                                         Image(systemName: entry.directory ? "folder" : "film")
                                         Text(entry.displayName)
                                         Spacer()
-                                        if !entry.directory { Text(entry.sizeAndDuration).foregroundStyle(.secondary) }
+                                        if !entry.directory { Text(entry.sizeAndDuration).font(fileDetailsFont).foregroundStyle(.secondary) }
                                     }
                                 }.disabled(!entry.directory && !entry.playable)
                                     .task(id: entry.id) { await browser.loadDuration(entry) }
@@ -730,6 +774,7 @@ struct BrowserScreen: View {
                         }
                     }
                     .listStyle(.plain)
+                    .font(listPrimaryFont)
                     #if os(iOS)
                     .scrollContentBackground(.hidden)
                     #endif
@@ -783,6 +828,11 @@ struct BrowserScreen: View {
                 Text("Show other files alongside folders and supported videos. Hidden files stay hidden.")
             }
             Section {
+                SubtitleSizeSetting()
+            } footer: {
+                Text("For external and ASS/SSA subtitles. Native captions use system settings. Saved on this device.")
+            }
+            Section {
                 Toggle("Show Debug Info", isOn: $showDebugInfo)
                     .toggleStyle(.switch)
             }
@@ -808,7 +858,7 @@ struct BrowserScreen: View {
                             Image(systemName: "folder")
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(favorite.name)
-                                Text(favorite.location).font(.caption).foregroundStyle(.secondary)
+                                Text(favorite.location).font(listSecondaryFont).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -819,6 +869,7 @@ struct BrowserScreen: View {
                     }
                 }
                 .listStyle(.plain)
+                .font(listPrimaryFont)
                 #if os(iOS)
                 .scrollContentBackground(.hidden)
                 #endif
@@ -842,15 +893,19 @@ struct BrowserScreen: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("\(video.progress.prefix) \(video.file?.name ?? "Saved video · \(video.id.prefix(6))")")
                                 if let file = video.file {
-                                    Text(BrowserEntry(name: file.name, path: file.path, directory: false, size: file.size, duration: video.progress.duration).sizeAndDuration).font(.caption).foregroundStyle(.secondary)
+                                    Text(BrowserEntry(name: file.name, path: file.path, directory: false, size: file.size, duration: video.progress.duration).sizeAndDuration).font(listSecondaryFont).foregroundStyle(.secondary)
                                 }
-                                Text(video.file?.location ?? "Open this video's folder in Files to recover its name and location.")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(video.file?.folderLocation ?? "Open this video's folder in Files to recover its name and location.")
+                                    .font(listSecondaryFont).foregroundStyle(.secondary)
                             }
                         }
                     }
                     .disabled(video.file == nil)
                     .contextMenu {
+                        if let file = video.file {
+                            Button("Delete File…", systemImage: "trash", role: .destructive) { watchingFileToDelete = file }
+                                .disabled(watchingBrowser.busy)
+                        }
                         Button("Reset playback", systemImage: "arrow.counterclockwise") {
                             PlaybackPositions.shared.clear(video.id)
                             watching = PlaybackPositions.shared.watching()
@@ -858,6 +913,7 @@ struct BrowserScreen: View {
                     }
                 }
                 .listStyle(.plain)
+                .font(listPrimaryFont)
                 #if os(iOS)
                 .scrollContentBackground(.hidden)
                 #endif
@@ -865,6 +921,13 @@ struct BrowserScreen: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .alert("Delete File?", isPresented: Binding(get: { watchingFileToDelete != nil }, set: { if !$0 { watchingFileToDelete = nil } }), presenting: watchingFileToDelete) { file in
+            Button("Delete", role: .destructive) {
+                watchingBrowser.deleteWatchingFile(file) { watching = PlaybackPositions.shared.watching() }
+                watchingFileToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { watchingFileToDelete = nil }
+        } message: { file in Text("Permanently delete \(file.name) from the server? This cannot be undone.") }
         .onAppear { watching = PlaybackPositions.shared.watching() }
         .task {
             watchingBrowser.useCredentials(from: filesBrowser)

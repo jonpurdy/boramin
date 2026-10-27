@@ -30,6 +30,9 @@ output.mkdir(parents=True, exist_ok=True)
 command = ['xcodebuild', '-project', project, '-scheme', scheme, '-configuration', 'Release',
            '-destination', destination, '-derivedDataPath', str(root/'build/TestFlight/DerivedData'/args.platform),
            '-archivePath', str(archive), '-allowProvisioningUpdates', 'archive']
+if args.platform == 'macos':
+    # Bundled Mac media libraries support Apple Silicon, not Intel.
+    command.extend(['ARCHS=arm64', 'ONLY_ACTIVE_ARCH=YES'])
 if args.build_number is not None:
     command.append(f'CURRENT_PROJECT_VERSION={args.build_number}')
 subprocess.run(command, cwd=root, check=True)

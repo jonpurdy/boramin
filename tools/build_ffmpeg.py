@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='boramin-ffmpeg-') as temp:
         '--enable-demuxer=matroska,mov,avi,mpegts,mp3,aac,flac',
         '--enable-muxer=mp4',
         '--enable-parser=vp9,h264,hevc,av1,mpeg4video,mpegvideo,opus,aac,ac3,vorbis,flac,mpegaudio',
-        '--enable-decoder=opus,vorbis,aac,ac3,eac3,flac,mp3,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,alac,dca',
+        '--enable-decoder=subrip,ass,ssa,movtext,text,webvtt,opus,vorbis,aac,ac3,eac3,flac,mp3,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,alac,dca',
         '--enable-static','--disable-shared']
     for command in [[str(source/'configure'),*args],['make',f'-j{min(os.cpu_count() or 4,8)}'],['make','install']]:
         subprocess.run(command,cwd=source,check=True)
