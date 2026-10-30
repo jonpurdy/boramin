@@ -91,6 +91,17 @@ import Foundation
         precondition(store.subtitleSelection(for: key) == nil && store.progress(for: key) == nil)
         store.save(1, duration: 100, for: "old-subtitle", subtitle: subtitle)
 
+        let httpRoot = URL(string: "https://nas.local/media/")!
+        let httpFile = PlaybackFile(server: httpRoot, share: "", path: "Folder/movie.mkv", size: 1234, username: "viewer", domain: "", connectionID: "http")!
+        precondition(httpFile.key != key)
+        for root in ["http://nas.local/media/", "https://nas.local/Media/", "https://nas.local/other/"] {
+            precondition(httpFile.key != PlaybackPositions.key(server: URL(string: root)!, share: "", path: httpFile.path, size: httpFile.size))
+        }
+        store.remember(httpFile); store.save(20, duration: 100, for: httpFile.key)
+        precondition(reopened.watching().contains { $0.file == httpFile })
+        precondition(PlaybackFile(fields: httpFile.fields) == httpFile)
+        store.clear(httpFile.key)
+        print("PASS: HTTP Watching identities preserve scheme/base path/case and coexist with unchanged SMB keys")
         for index in 0..<505 { store.save(Double(index + 1), duration: 1000, for: "file\(index)") }
         precondition((defaults.dictionary(forKey: "playbackPositions.v1")?.count ?? 0) == 500)
         precondition(store.progress(for: "file504") != nil)

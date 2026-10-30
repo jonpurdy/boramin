@@ -115,3 +115,17 @@ Add `--browse` after the fixture path to also check root directory ordering/filt
 Add the pass-through argument with `python3 tools/run_playback_probe.py connections -- /absolute/path/to/local-preferences.plist --watching` to test an active Watching file: uncached route discovery over SMB and reuse of its isolated local metadata cache. The fixture must include that file’s saved metadata and playback position.
 
 Use `--stress` after the fixture path to repeat the connection cycle ten times (40 opening/reconnection attempts for two servers). `Tests/ConnectionRetryTests.swift`, included in `tools/run_tests.py`, checks one-shot transient recovery, the two-attempt cap, no authentication/path retries, and cancellation.
+
+## HTTP/Caddy integration
+
+`python3 tools/test_http.py` builds the isolated `http` probe and runs a disposable Caddy server plus an adversarial HTTP server, using generated media and synthetic credentials. Requires `caddy` and `ffmpeg` on PATH. Run sequentially with all other playback probes. The harness removes its diagnostic app afterward and stops both servers; build/output logs remain under ignored `build/HTTPValidation/` and `build/AetherSoftwareTests/http-build.log`.
+
+Coverage includes Caddy JSON (including encoded filenames and nested folders), Basic authentication, range byte identity, 128 MiB cache eviction, ignored/malformed/truncated/oversized/changed responses, encoded bodies, origin/base-path redirects, invalid listings, cancellation, favorites and Watching persistence/reopening, and matching external subtitle loading. Its Mac checks exercise native AVPlayer, Aether native/software and original VP9 routes with video-output/rendering evidence before and after seeks, plus native pause and teardown. It also checks per-reader cancellation and transport lifetime after the browsing session is released. These checks do not contact saved servers, use private defaults, activate iCloud, deploy to devices, or establish physical iOS/tvOS playback. Connection/model suites also cover HTTP credentials, additive profile fields, fixed types and unchanged SMB data.
+
+## Cloud connection identity regression
+
+`CloudConnectionIdentityTests.swift`, included in `python3 tools/run_tests.py`, uses synthetic records and isolated preferences; it does not instantiate the production sync engine or contact CloudKit. It first reproduces the old conflicting legacy-record/UUID-payload behavior, then checks both application orders from missing, correct and duplicate local sets, repeated application/relaunch, cache/outbox serialization, pending edits, stable favorite/Watching/subtitle references, and distinct same-host and HTTP profiles. Unverifiable IDs and cross-profile deletions must not be applied.
+
+## tvOS 26.2 simulator
+
+On Apple Silicon, build the private bridge dependencies with `python3 tools/build_ffmpeg.py --platform tvos-simulator`, then select the running tvOS 26.2+ simulator under the BoraMin tvOS scheme. Device libraries are rebuilt separately with `--platform tvos`. Both use the same pinned FFmpeg source and private framework boundary; the simulator does not substitute Mac or device binaries. iOS Simulator remains unconfigured. Simulator browsing/debugging can help reproduce list-navigation faults, but does not establish physical-device playback or tvOS 27 behavior.

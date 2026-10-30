@@ -1,17 +1,16 @@
 import OSLog
 import Foundation
 import Network
-import AMSMB2
 import AVFoundation
 
 private let streamingLog = Logger(subsystem: "com.example.BoraMin", category: "Streaming")
 
-/// A seekable SMB file with a fixed-size, in-memory block cache. Never writes the movie to disk.
-final class SMBRemoteFile: @unchecked Sendable {
+/// A seekable remote file with a fixed-size, in-memory block cache. Never writes the movie to disk.
+final class CachedRemoteFile: @unchecked Sendable {
     let size: Int64
     let cancellation: CancellationFlag
-    private let client: SMB2Manager
-    private let path: String
+    typealias Fetch = @Sendable (Range<Int64>, CancellationFlag, CancellationFlag?, @escaping @Sendable (Result<Data, Error>) -> Void) -> (@Sendable () -> Void)?
+    private let fetch: Fetch
     private let lock = NSLock()
     private let metricsLock = NSLock()
     private let blockSize: Int64
@@ -34,8 +33,8 @@ final class SMBRemoteFile: @unchecked Sendable {
         testUnavailableUntil = ProcessInfo.processInfo.systemUptime + max(0, unavailableFor)
     }
 
-    init(client: SMB2Manager, path: String, size: Int64, cancellation: CancellationFlag) {
-        self.client = client; self.path = path; self.size = size; self.cancellation = cancellation
+    init(size: Int64, cancellation: CancellationFlag, fetch: @escaping Fetch) {
+        self.fetch = fetch; self.size = size; self.cancellation = cancellation
         // Shared default for all streaming formats on iOS and tvOS; test flags can override it.
         var cacheMiB = 128
         let args = CommandLine.arguments
@@ -60,7 +59,7 @@ final class SMBRemoteFile: @unchecked Sendable {
     /// Called only on worker queues. Serialize cache fills while libsmb2 runs on its own queue.
     func read(offset: Int64, count: Int, interrupt: CancellationFlag? = nil) throws -> Data {
         guard !cancellation.cancelled else { throw CancellationError() }
-        guard offset >= 0, count > 0 else { throw PlayerError("Invalid SMB byte range.") }
+        guard offset >= 0, count > 0 else { throw PlayerError("Invalid remote byte range.") }
         guard offset < size else { return Data() }
         // Normal playback needs immediate lock handoff. Polling every 10 ms here
         // caused VP9 stutters on Apple TV; reserve polling for explicit per-read interruption.
@@ -85,23 +84,23 @@ final class SMBRemoteFile: @unchecked Sendable {
             if ProcessInfo.processInfo.systemUptime < unavailable { throw PlayerError("Injected temporary SMB read failure.") }
             let end = min(size, start + blockSize)
             let semaphore = DispatchSemaphore(value: 0)
-            let result = SMBReadResult()
-            client.contents(atPath: path, range: start..<end, progress: { [cancellation] _, _ in !cancellation.cancelled && interrupt?.cancelled != true }) { value in
+            let result = RemoteReadResult()
+            let cancelRead = fetch(start..<end, cancellation, interrupt) { value in
                 result.value = value; semaphore.signal()
             }
             // The SMB client has a connection timeout; leave its callback's captured state alive
             // if cancellation lets this worker return before a pending read finishes.
             while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
-                if cancellation.cancelled || interrupt?.cancelled == true { throw CancellationError() }
+                if cancellation.cancelled || interrupt?.cancelled == true { cancelRead?(); throw CancellationError() }
             }
             if cancellation.cancelled || interrupt?.cancelled == true { throw CancellationError() }
             do { data = try result.value!.get() }
             catch {
                 let failure = error as NSError
-                streamingLog.error("SMB read failed offset=\(start) count=\(end - start) code=\(failure.code) domain=\(failure.domain, privacy: .public) details=\(failure.localizedDescription, privacy: .private)")
+                streamingLog.error("Remote read failed offset=\(start) count=\(end - start) code=\(failure.code) domain=\(failure.domain, privacy: .public) details=\(failure.localizedDescription, privacy: .private)")
                 throw error
             }
-            guard data.count == Int(end - start) else { throw PlayerError("The SMB file changed or a network read ended early.") }
+            guard data.count == Int(end - start) else { throw PlayerError("The remote file changed or a network read ended early.") }
             metricsLock.lock()
             fetched += Int64(data.count)
             residentBytes += Int64(data.count)
@@ -126,18 +125,18 @@ final class SMBRemoteFile: @unchecked Sendable {
         MediaIO(context: Unmanaged.passUnretained(self).toOpaque(), size: size, read: { context, offset, output, count in
             guard let context, let output else { return -1 }
             do {
-                let data = try Unmanaged<SMBRemoteFile>.fromOpaque(context).takeUnretainedValue().read(offset: offset, count: Int(count))
+                let data = try Unmanaged<CachedRemoteFile>.fromOpaque(context).takeUnretainedValue().read(offset: offset, count: Int(count))
                 data.copyBytes(to: output, count: data.count)
                 return Int32(data.count)
             } catch { return -1 }
         }, cancelled: { context in
             guard let context else { return 1 }
-            return Unmanaged<SMBRemoteFile>.fromOpaque(context).takeUnretainedValue().cancellation.cancelled ? 1 : 0
+            return Unmanaged<CachedRemoteFile>.fromOpaque(context).takeUnretainedValue().cancellation.cancelled ? 1 : 0
         })
     }
 }
 
-private final class SMBReadResult: @unchecked Sendable {
+private final class RemoteReadResult: @unchecked Sendable {
     // Written before signalling the semaphore, read only after the waiter acquires it.
     var value: Result<Data, Error>?
 }
@@ -146,13 +145,13 @@ private final class SMBReadResult: @unchecked Sendable {
 final class StreamingAudio: @unchecked Sendable {
     let length: Int64
     private let header: Data
-    private let source: SMBRemoteFile
+    private let source: CachedRemoteFile
     private let duration: Double
     private let queue = DispatchQueue(label: "BoraMin.streamingAudio", qos: .userInitiated)
     private var reader: OpaquePointer?
     private var stopped = false
 
-    init(source: SMBRemoteFile, duration: Double) throws {
+    init(source: CachedRemoteFile, duration: Double) throws {
         var bytes = [UInt8](repeating: 0, count: 68)
         let length = media_caf_header(duration, &bytes)
         guard length > 68 else { throw PlayerError("This video has no usable duration.") }
@@ -219,10 +218,10 @@ struct HTTPByteRange: Equatable {
     }
 }
 
-/// AVPlayer consumes HTTP ranges; FFmpeg consumes the same cached SMB source through custom AVIO.
+/// AVPlayer consumes HTTP ranges; FFmpeg consumes the same cached remote source through custom AVIO.
 /// The listener is reachable only on this device's loopback interface, with a random per-play token.
 final class StreamingSession: @unchecked Sendable {
-    let source: SMBRemoteFile
+    let source: CachedRemoteFile
     private let listener: NWListener
     private let queue = DispatchQueue(label: "BoraMin.loopback")
     private let token = UUID().uuidString
@@ -258,7 +257,7 @@ final class StreamingSession: @unchecked Sendable {
     private let stopLock = NSLock()
     private var stopped = false
 
-    init(source: SMBRemoteFile, fileExtension: String) throws {
+    init(source: CachedRemoteFile, fileExtension: String) throws {
         self.source = source
         self.ext = fileExtension.lowercased().filter { $0.isASCII && $0.isLetter || $0.isNumber }
         let parameters = NWParameters.tcp
@@ -363,7 +362,7 @@ final class StreamingSession: @unchecked Sendable {
             listener.cancel()
             for task in tasks.values { task.cancel() }; tasks.removeAll()
             for connection in connections.values { connection.cancel() }; connections.removeAll()
-            streamingLog.notice("BORAMIN_STREAM stopped; SMB fetched \(self.source.fetchedBytes) of \(self.source.size) bytes")
+            streamingLog.notice("BORAMIN_STREAM stopped; remote fetched \(self.source.fetchedBytes) of \(self.source.size) bytes")
         }
     }
     private func accept(_ connection: NWConnection) {
@@ -466,7 +465,7 @@ final class StreamingSession: @unchecked Sendable {
             }
             let count = Int(min(64 * 1024, range.end - offset))
             let data = try await (isAudio ? audio!.read(offset: offset, count: count) : readSource(offset: offset, count: count))
-            guard !data.isEmpty else { throw PlayerError("Unexpected end of SMB file.") }
+            guard !data.isEmpty else { throw PlayerError("Unexpected end of remote file.") }
             try await send(data, to: connection)
             offset += Int64(data.count)
         }
@@ -487,7 +486,7 @@ final class StreamingSession: @unchecked Sendable {
 /// Launch-flag-only experiment: independent VP9/AAC fragments generated on demand.
 /// A serial queue owns the demuxer and a two-fragment LRU (at most 64 MiB).
 final class ExperimentalRemux: @unchecked Sendable {
-    private let source: SMBRemoteFile
+    private let source: CachedRemoteFile
     private let queue = DispatchQueue(label: "BoraMin.experimental-remux")
     private var reader: OpaquePointer?
     private var info: MediaInfo
@@ -498,7 +497,7 @@ final class ExperimentalRemux: @unchecked Sendable {
     private var stopped = false
     let playlist: Data
 
-    init(source: SMBRemoteFile, info: MediaInfo, keyframes: [Double]) throws {
+    init(source: CachedRemoteFile, info: MediaInfo, keyframes: [Double]) throws {
         guard info.vp9 != 0, info.duration.isFinite, info.duration > 0,
               keyframes.count >= 2, keyframes.count <= 100_000,
               let first = keyframes.first, first < 0.1 else {

@@ -44,6 +44,14 @@ import Foundation
         precondition(reopened.locations == [alpha, two, ten, zulu])
         precondition(Favorites(defaults: defaults).locations == [alpha, two, ten, zulu])
         precondition(FavoriteLocation(server: URL(string: "https://nas.local")!, share: "Movies", path: "") == nil)
+        let httpRoot = URL(string: "https://nas.local/media/")!
+        let httpFavorite = FavoriteLocation(server: httpRoot, share: "", path: "日本語/Folder 2", connectionID: "http")!
+        let httpBase = FavoriteLocation(server: httpRoot, share: "", path: "", connectionID: "http")!
+        precondition(httpBase.name == "media" && httpFavorite.name == "Folder 2")
+        precondition(httpFavorite.location.hasPrefix(httpRoot.absoluteString))
+        precondition(FavoriteLocation(server: URL(string: "https://user:secret@nas.local/")!, share: "", path: "") == nil)
+        store.add(httpFavorite); store.add(httpBase)
+        precondition(Favorites(defaults: defaults).contains(httpFavorite))
         let connectionA = FavoriteLocation(server: URL(string: "smb://nas.local")!, share: "Media", path: "shared", connectionID: "a")!
         let connectionB = FavoriteLocation(server: URL(string: "smb://nas.local")!, share: "Media", path: "shared", connectionID: "b")!
         store.add(connectionA); store.add(connectionB)

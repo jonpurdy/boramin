@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Build pinned minimal FFmpeg libraries for tvOS, iOS, or macOS (arm64)."""
+"""Build pinned minimal FFmpeg libraries for Apple arm64 devices and tvOS Simulator."""
 from pathlib import Path
 import argparse, hashlib, os, shutil, subprocess, tarfile, tempfile, urllib.request
 parser = argparse.ArgumentParser()
-parser.add_argument("--platform", choices=["tvos", "ios", "macos"], default="tvos")
+parser.add_argument("--platform", choices=["tvos", "tvos-simulator", "ios", "macos"], default="tvos")
 platform = parser.parse_args().platform
-sdk_name = {"ios": "iphoneos", "tvos": "appletvos", "macos": "macosx"}[platform]
-target = {"ios": "arm64-apple-ios26.0", "tvos": "arm64-apple-tvos26.6", "macos": "arm64-apple-macos15.0"}[platform]
+sdk_name = {"ios": "iphoneos", "tvos": "appletvos", "tvos-simulator": "appletvsimulator", "macos": "macosx"}[platform]
+target = {"ios": "arm64-apple-ios26.0", "tvos": "arm64-apple-tvos26.2", "tvos-simulator": "arm64-apple-tvos26.2-simulator", "macos": "arm64-apple-macos15.0"}[platform]
 ROOT = Path(__file__).resolve().parent.parent
 VERSION = '8.0.1'
 SHA256 = '05ee0b03119b45c0bdb4df654b96802e909e0a752f72e4fe3794f487229e5a41'
@@ -32,8 +32,8 @@ with tempfile.TemporaryDirectory(prefix='boramin-ffmpeg-') as temp:
         '--enable-static','--disable-shared']
     for command in [[str(source/'configure'),*args],['make',f'-j{min(os.cpu_count() or 4,8)}'],['make','install']]:
         subprocess.run(command,cwd=source,check=True)
-    destination = ROOT/'vendor'/{'ios': 'ffmpeg-ios', 'tvos': 'ffmpeg', 'macos': 'ffmpeg-macos'}[platform]
+    destination = ROOT/'vendor'/{'ios': 'ffmpeg-ios', 'tvos': 'ffmpeg', 'tvos-simulator': 'ffmpeg-tvos-simulator', 'macos': 'ffmpeg-macos'}[platform]
     for folder in ['include','lib']:
         shutil.copytree(install/folder,destination/folder,dirs_exist_ok=True)
     shutil.copy2(source/'COPYING.LGPLv2.1',ROOT/'vendor'/'FFmpeg-LICENSE.txt')
-print(f'Built physical {platform} arm64 FFmpeg libraries in',destination)
+print(f'Built {platform} arm64 FFmpeg libraries in',destination)

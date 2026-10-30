@@ -62,35 +62,45 @@ private let externalSubtitleLog = Logger(subsystem: "com.example.BoraMin", categ
             (videoName as NSString).deletingPathExtension == (subtitleName as NSString).deletingPathExtension
     }
 
-    static func discover(client: SMB2Manager, path: String, playbackCancellation: CancellationFlag) async -> ExternalSubtitles? {
+    static func discover(session: RemoteSession, path: String, playbackCancellation: CancellationFlag) async -> ExternalSubtitles? {
         do {
             let folder = (path as NSString).deletingLastPathComponent
             let name = (path as NSString).lastPathComponent
-            let entries = try await SMBBrowsingService.directoryAttributes(client, path: folder)
+            let entries = try await session.readDirectory(path: folder)
             guard !playbackCancellation.cancelled, !Task.isCancelled else { return nil }
             let tracks: [Track] = entries.compactMap { entry in
-                guard entry[.fileResourceTypeKey] as? URLFileResourceType == .regular,
-                      let filename = entry[.nameKey] as? String, matches(videoName: name, subtitleName: filename) else { return nil }
-                let size = (entry[.fileSizeKey] as? NSNumber)?.int64Value ?? 0
-                let remotePath = folder.isEmpty ? filename : "\(folder)/\(filename)"
-                let ext = (filename as NSString).pathExtension.lowercased()
+                guard !entry.directory, matches(videoName: name, subtitleName: entry.name) else { return nil }
+                let size = entry.size, remotePath = entry.path
+                let ext = (entry.name as NSString).pathExtension.lowercased()
                 return Track(id: remotePath, name: "\(ext.uppercased()) — External", ext: ext) { cancellation in
                     guard size > 0, size <= ExternalSubtitleDecoder.maximumBytes else { throw PlayerError("The subtitle file is empty or exceeds 8 MiB.") }
-                    // Bound reads even if the file grows after directory discovery.
-                    var bytes = Data()
-                    for try await chunk in client.contents(atPath: remotePath, range: Int64(0)..<(size + 1)) {
-                        guard !cancellation.cancelled, !playbackCancellation.cancelled, !Task.isCancelled else { throw CancellationError() }
-                        guard bytes.count + chunk.count <= size else { throw PlayerError("The subtitle file changed while loading.") }
-                        bytes.append(chunk)
+                    if let client = session.smb {
+                        // Preserve the SMB sidecar read, including its size-change check.
+                        var bytes = Data()
+                        for try await chunk in client.contents(atPath: remotePath, range: Int64(0)..<(size + 1)) {
+                            guard !cancellation.cancelled, !playbackCancellation.cancelled, !Task.isCancelled else { throw CancellationError() }
+                            guard bytes.count + chunk.count <= size else { throw PlayerError("The subtitle file changed while loading.") }
+                            bytes.append(chunk)
+                        }
+                        guard bytes.count == size else { throw PlayerError("The subtitle download ended early.") }
+                        return bytes
                     }
-                    guard bytes.count == size else { throw PlayerError("The subtitle download ended early.") }
-                    return bytes
+                    let source = try await session.openFile(path: remotePath, size: size, cancellation: playbackCancellation)
+                    return try await Task.detached(priority: .userInitiated) {
+                        var bytes = Data()
+                        while bytes.count < size {
+                            guard !cancellation.cancelled, !playbackCancellation.cancelled, !Task.isCancelled else { throw CancellationError() }
+                            let chunk = try source.read(offset: Int64(bytes.count), count: Int(size) - bytes.count, interrupt: cancellation)
+                            guard !chunk.isEmpty else { throw PlayerError("The subtitle download ended early.") }
+                            bytes.append(chunk)
+                        }
+                        return bytes
+                    }.value
                 }
             }.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
             externalSubtitleLog.notice("Matching external subtitle files=\(tracks.count)")
             return tracks.isEmpty ? nil : ExternalSubtitles(tracks: tracks)
         } catch {
-            // A sidecar directory failure must not prevent the movie from playing.
             externalSubtitleLog.warning("Subtitle discovery failed: \(error.localizedDescription, privacy: .private)")
             return nil
         }

@@ -20,6 +20,8 @@ with tempfile.TemporaryDirectory(prefix='boramin-tests-') as tmp:
     run([tmp/'connection-tests'])
     run(['swiftc','-module-cache-path',root/'build/MacModuleCache','Player/ConnectionRetry.swift','Tests/ConnectionRetryTests.swift','-o',tmp/'connection-retry-tests'])
     run([tmp/'connection-retry-tests'])
+    run(['swiftc','-module-cache-path',root/'build/MacModuleCache','-parse-as-library','Player/ConnectionPreferences.swift','Player/Favorites.swift','Player/PlaybackPositions.swift','Shared/ICloudSync.swift','Tests/CloudConnectionIdentityTests.swift','-o',tmp/'cloud-identity-tests'])
+    run([tmp/'cloud-identity-tests'])
     run(['swiftc','-module-cache-path',root/'build/MacModuleCache','-parse-as-library','Player/ConnectionPreferences.swift','Player/Favorites.swift','Player/PlaybackPositions.swift','Shared/ICloudSync.swift','Tests/CloudSyncSchedulingTests.swift','-o',tmp/'cloud-scheduling-tests'])
     run([tmp/'cloud-scheduling-tests'])
     source=lab/'fixtures/middle.webm'

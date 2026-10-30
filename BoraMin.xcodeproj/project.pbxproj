@@ -185,6 +185,13 @@
 			<key>sourceTree</key>
 			<string>SOURCE_ROOT</string>
 		</dict>
+		<key>0C8C4EA2CEA0E664829D62EA</key>
+		<dict>
+			<key>fileRef</key>
+			<string>2E8E544F3544AB9716E69F20</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
 		<key>0D6E4079E36703EBD37C0072</key>
 		<dict>
 			<key>children</key>
@@ -295,10 +302,12 @@
 		<dict>
 			<key>buildSettings</key>
 			<dict>
+				<key>ARCHS[sdk=appletvsimulator*]</key>
+				<string>arm64</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -313,14 +322,22 @@
 				<array>
 					<string>$(SRCROOT)/vendor/ffmpeg/include</string>
 				</array>
+				<key>HEADER_SEARCH_PATHS[sdk=appletvsimulator*]</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/include</string>
+				</array>
 				<key>INSTALL_PATH</key>
 				<string>$(LOCAL_LIBRARY_DIR)/Frameworks</string>
 				<key>LIBRARY_SEARCH_PATHS</key>
 				<array>
 					<string>$(SRCROOT)/vendor/ffmpeg/lib</string>
 				</array>
+				<key>LIBRARY_SEARCH_PATHS[sdk=appletvsimulator*]</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib</string>
+				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -348,9 +365,9 @@
 				<key>SKIP_INSTALL</key>
 				<string>YES</string>
 				<key>SUPPORTED_PLATFORMS</key>
-				<string>appletvos</string>
+				<string>appletvos appletvsimulator</string>
 				<key>TVOS_DEPLOYMENT_TARGET</key>
-				<string>26.6</string>
+				<string>26.2</string>
 			</dict>
 			<key>isa</key>
 			<string>XCBuildConfiguration</string>
@@ -379,7 +396,7 @@
 				<key>COMBINE_HIDPI_IMAGES</key>
 				<string>YES</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -404,7 +421,7 @@
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
 				<string>15.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -618,6 +635,13 @@
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
+		<key>297E05E9D032B6AB17C38C98</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C4783C326BC6B16251AFB3A1</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
 		<key>298B7AA406BF5A25D6CBAB01</key>
 		<dict>
 			<key>fileRef</key>
@@ -724,6 +748,17 @@
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
+		<key>2E8E544F3544AB9716E69F20</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Player/RemoteSession.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
 		<key>2F8BDEBE86336F507E353729</key>
 		<dict>
 			<key>fileRef</key>
@@ -783,6 +818,13 @@
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
+		<key>38DF20A134AF2F56FE5F7BEB</key>
+		<dict>
+			<key>fileRef</key>
+			<string>2E8E544F3544AB9716E69F20</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
 		<key>39A6726889896B2E406B7643</key>
 		<dict>
 			<key>fileRef</key>
@@ -794,6 +836,8 @@
 		<dict>
 			<key>buildSettings</key>
 			<dict>
+				<key>ARCHS[sdk=appletvsimulator*]</key>
+				<string>arm64</string>
 				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
 				<string>AppIcon</string>
 				<key>CODE_SIGN_ENTITLEMENTS</key>
@@ -801,7 +845,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -809,6 +853,10 @@
 				<key>HEADER_SEARCH_PATHS</key>
 				<array>
 					<string>$(SRCROOT)/vendor/ffmpeg/include</string>
+				</array>
+				<key>HEADER_SEARCH_PATHS[sdk=appletvsimulator*]</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/include</string>
 				</array>
 				<key>INFOPLIST_FILE</key>
 				<string>Player/Info.plist</string>
@@ -821,8 +869,12 @@
 				<array>
 					<string>$(SRCROOT)/vendor/ffmpeg/lib</string>
 				</array>
+				<key>LIBRARY_SEARCH_PATHS[sdk=appletvsimulator*]</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib</string>
+				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -844,13 +896,13 @@
 				<key>SDKROOT</key>
 				<string>appletvos</string>
 				<key>SUPPORTED_PLATFORMS</key>
-				<string>appletvos</string>
+				<string>appletvos appletvsimulator</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
 				<string>Player/Player-Bridging-Header.h</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>3</string>
 				<key>TVOS_DEPLOYMENT_TARGET</key>
-				<string>26.6</string>
+				<string>26.2</string>
 			</dict>
 			<key>isa</key>
 			<string>XCBuildConfiguration</string>
@@ -982,7 +1034,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -1008,7 +1060,7 @@
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
 				<string>15.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -1063,7 +1115,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -1089,7 +1141,7 @@
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
 				<string>15.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -1201,7 +1253,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -1225,7 +1277,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -1423,11 +1475,13 @@
 				<string>5079A3C720BF5B1C147EA58A</string>
 				<string>9931584D18C08963252E5CF2</string>
 				<string>824362E031C424861C536F69</string>
+				<string>297E05E9D032B6AB17C38C98</string>
 				<string>7E085F123844778376F802C5</string>
 				<string>C2AEB65488D3B3DD2B62875B</string>
 				<string>13F9B6163128F70D004CB7DB</string>
 				<string>20D9999757F9F1E70279BBA7</string>
 				<string>E6D66CB30AA38BFA14430221</string>
+				<string>38DF20A134AF2F56FE5F7BEB</string>
 				<string>7DFB0A1D018A2AEEDAA92513</string>
 				<string>1A5554CE5C5600445A4EA352</string>
 				<string>B4DA894297D455610E91831A</string>
@@ -1622,6 +1676,8 @@
 		<dict>
 			<key>buildSettings</key>
 			<dict>
+				<key>ARCHS[sdk=appletvsimulator*]</key>
+				<string>arm64</string>
 				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
 				<string>AppIcon</string>
 				<key>CODE_SIGN_ENTITLEMENTS</key>
@@ -1629,7 +1685,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -1637,6 +1693,10 @@
 				<key>HEADER_SEARCH_PATHS</key>
 				<array>
 					<string>$(SRCROOT)/vendor/ffmpeg/include</string>
+				</array>
+				<key>HEADER_SEARCH_PATHS[sdk=appletvsimulator*]</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/include</string>
 				</array>
 				<key>INFOPLIST_FILE</key>
 				<string>Player/Info.plist</string>
@@ -1649,8 +1709,12 @@
 				<array>
 					<string>$(SRCROOT)/vendor/ffmpeg/lib</string>
 				</array>
+				<key>LIBRARY_SEARCH_PATHS[sdk=appletvsimulator*]</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib</string>
+				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -1672,13 +1736,13 @@
 				<key>SDKROOT</key>
 				<string>appletvos</string>
 				<key>SUPPORTED_PLATFORMS</key>
-				<string>appletvos</string>
+				<string>appletvos appletvsimulator</string>
 				<key>SWIFT_OBJC_BRIDGING_HEADER</key>
 				<string>Player/Player-Bridging-Header.h</string>
 				<key>TARGETED_DEVICE_FAMILY</key>
 				<string>3</string>
 				<key>TVOS_DEPLOYMENT_TARGET</key>
-				<string>26.6</string>
+				<string>26.2</string>
 			</dict>
 			<key>isa</key>
 			<string>XCBuildConfiguration</string>
@@ -1760,10 +1824,12 @@
 		<dict>
 			<key>buildSettings</key>
 			<dict>
+				<key>ARCHS[sdk=appletvsimulator*]</key>
+				<string>arm64</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -1778,14 +1844,22 @@
 				<array>
 					<string>$(SRCROOT)/vendor/ffmpeg/include</string>
 				</array>
+				<key>HEADER_SEARCH_PATHS[sdk=appletvsimulator*]</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/include</string>
+				</array>
 				<key>INSTALL_PATH</key>
 				<string>$(LOCAL_LIBRARY_DIR)/Frameworks</string>
 				<key>LIBRARY_SEARCH_PATHS</key>
 				<array>
 					<string>$(SRCROOT)/vendor/ffmpeg/lib</string>
 				</array>
+				<key>LIBRARY_SEARCH_PATHS[sdk=appletvsimulator*]</key>
+				<array>
+					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib</string>
+				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -1813,9 +1887,9 @@
 				<key>SKIP_INSTALL</key>
 				<string>YES</string>
 				<key>SUPPORTED_PLATFORMS</key>
-				<string>appletvos</string>
+				<string>appletvos appletvsimulator</string>
 				<key>TVOS_DEPLOYMENT_TARGET</key>
-				<string>26.6</string>
+				<string>26.2</string>
 			</dict>
 			<key>isa</key>
 			<string>XCBuildConfiguration</string>
@@ -1862,7 +1936,7 @@
 				<key>COMBINE_HIDPI_IMAGES</key>
 				<string>YES</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -1887,7 +1961,7 @@
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
 				<string>15.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -1982,6 +2056,7 @@
 				<string>6F65B9A52CD5693421BC1BCB</string>
 				<string>6357C6E7CF5C3540DE52813C</string>
 				<string>801F71984C7B700CD646634C</string>
+				<string>C4783C326BC6B16251AFB3A1</string>
 				<string>B0B70DC5067A33F5F11EA7D2</string>
 				<string>30D42042D28090946CDBCB58</string>
 				<string>B2A26C837A2A8EEF5B594EB9</string>
@@ -1990,6 +2065,7 @@
 				<string>EB52ABF6F902D30BED31E845</string>
 				<string>07717676A413142208F74FD4</string>
 				<string>53C23B1707ECAB0114718C19</string>
+				<string>2E8E544F3544AB9716E69F20</string>
 				<string>7FEDC0B8AADD1C5418C5C1F7</string>
 				<string>64E55F433D92D365D8F85D72</string>
 				<string>FD81068AD11CEE6191CAFB86</string>
@@ -2029,7 +2105,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -2052,7 +2128,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -2110,7 +2186,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -2133,7 +2209,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -2465,6 +2541,24 @@
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
+		<key>C4783C326BC6B16251AFB3A1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Player/HTTPFileService.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>C4805227358EFCB208537216</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C4783C326BC6B16251AFB3A1</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
 		<key>C53F2C818FA826D58E510E96</key>
 		<dict>
 			<key>buildActionMask</key>
@@ -2527,6 +2621,13 @@
 			<string>B6D04AD3ED21BBA579A5F247</string>
 			<key>productName</key>
 			<string>AetherEngine</string>
+		</dict>
+		<key>CA57EB59CB6C69D4B806C9D8</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C4783C326BC6B16251AFB3A1</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
 		</dict>
 		<key>CB4C26404F376F6FC7C5797A</key>
 		<dict>
@@ -2625,11 +2726,13 @@
 				<string>3C379753FDD60EB4F20C1E89</string>
 				<string>A77A1C3430087C61D280F14B</string>
 				<string>D3ABDBDAE2DFD40531551B13</string>
+				<string>CA57EB59CB6C69D4B806C9D8</string>
 				<string>F6DC3E2F402EE37A91ACB274</string>
 				<string>CDC799A78BF0F8B1675CA4E8</string>
 				<string>DE552DEF57127D7B7569CE41</string>
 				<string>64F1621F67E72CA428B4A737</string>
 				<string>9D7ECC11F97016E5DC235F92</string>
+				<string>0C8C4EA2CEA0E664829D62EA</string>
 				<string>E9046BFE1CF0C0C14E6E6624</string>
 				<string>8FE44E6C97A501CE55B5EAB7</string>
 				<string>B4F2F6D6E1194528675DAA59</string>
@@ -2660,7 +2763,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>4</string>
+				<string>5</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -2684,7 +2787,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.4</string>
+				<string>0.5</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -2868,11 +2971,13 @@
 				<string>94E503941B6D5AA2005C0D42</string>
 				<string>6CC808038E7646C256400893</string>
 				<string>542A9558DDA10A15976E4997</string>
+				<string>C4805227358EFCB208537216</string>
 				<string>77903C6ADC24DD17BEEA4836</string>
 				<string>3F7C96B1C797DE9FA3E7874A</string>
 				<string>2371C0AD86A4926C86B7AA03</string>
 				<string>7B82A38E0189021F036FEC7E</string>
 				<string>DAF04B582BF3FBB8F0C5E1A0</string>
+				<string>F6D6C033CB57A13C061A9E4A</string>
 				<string>B681319CCB2C42083C076328</string>
 				<string>90CBC478660CD39321381AAE</string>
 				<string>AF6C51E15A17BEF41CAA890E</string>
@@ -3073,6 +3178,13 @@
 		<dict>
 			<key>fileRef</key>
 			<string>C149F867928E396D05FA3014</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>F6D6C033CB57A13C061A9E4A</key>
+		<dict>
+			<key>fileRef</key>
+			<string>2E8E544F3544AB9716E69F20</string>
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>

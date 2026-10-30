@@ -26,11 +26,20 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
     @Published var playing: PreparedMedia?
     let connections: ConnectionPreferences
     private let metadataCache: MediaMetadataCache
-    private let remote = SMBBrowsingService()
+    private var session: RemoteSession?
+    // Retained for existing SMB-only diagnostics; app operations use the neutral session.
     var client: SMB2Manager? {
-        get { remote.client }
-        set { remote.client = newValue }
+        get { session?.smb }
+        set { session = newValue.map { RemoteSession(smb: $0) } }
     }
+    var isShareListing: Bool { URL(string: host)?.scheme == "smb" && share.isEmpty }
+    var canDeleteFiles: Bool { session?.canDelete == true }
+    var folderTitle: String {
+        if !path.isEmpty { return (path as NSString).lastPathComponent }
+        if !share.isEmpty { return share }
+        return connectionID.flatMap { connections.connection(id: $0)?.title } ?? URL(string: host)?.host ?? "Files"
+    }
+    func canDelete(_ file: PlaybackFile) -> Bool { URL(string: file.server)?.scheme == "smb" }
     private var metadataJobs: [UUID: CancellationFlag] = [:]
     var cancellation = CancellationFlag()
     private var operation: Task<Void, Never>?
@@ -63,7 +72,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         host = saved.server; username = saved.username; domain = saved.domain; directShare = saved.share
         password = connections.password(address: host, username: username, domain: domain) ?? ""
     }
-    func openConnection(_ saved: SMBConnection) {
+    func openConnection(_ saved: SavedConnection) {
         guard !busy, playing == nil else { return }
         disconnect()
         connectionID = saved.id; host = saved.server; username = saved.username
@@ -114,18 +123,18 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         return error.domain == NSPOSIXErrorDomain && [EACCES, EPERM, EINVAL, ENOENT].contains(Int32(error.code))
     }
     private func establishConnection(preservingLocation: Bool = false, attempt: Int = 1) async throws {
-        let manager = try SMBBrowsingService.makeClient(server: host, username: username, domain: domain, password: password)
+        let manager = try RemoteSession.make(server: host, username: username, domain: domain, password: password)
         // Build the new session before replacing a working one (including on failed edits).
         let targetShare = preservingLocation && !share.isEmpty ? share : directShare
         let targetPath = preservingLocation ? path : ""
         let newShares: [String]
         let newEntries: [BrowserEntry]
         let started = ProcessInfo.processInfo.systemUptime
-        let phase = targetShare.isEmpty ? "shares" : "directory"
+        let phase = targetShare.isEmpty && manager.supportsShares ? "shares" : "directory"
         browserLog.notice("Connection opening phase=\(phase, privacy: .public) attempt=\(attempt)")
         do {
-            if targetShare.isEmpty {
-                newShares = try await SMBBrowsingService.listShares(manager)
+            if targetShare.isEmpty && manager.supportsShares {
+                newShares = try await manager.listShares()
                 newEntries = []
             } else {
                 newShares = []
@@ -135,22 +144,22 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         } catch {
             let failure = error as NSError
             browserLog.error("Connection attempt failed phase=\(phase, privacy: .public) attempt=\(attempt) domain=\(failure.domain, privacy: .public) code=\(failure.code) elapsed=\(ProcessInfo.processInfo.systemUptime - started)")
-            await SMBBrowsingService.disconnect(manager, gracefully: false)
+            await manager.disconnect(gracefully: false)
             throw error
         }
         browserLog.notice("Connection opened phase=\(phase, privacy: .public) attempt=\(attempt) elapsed=\(ProcessInfo.processInfo.systemUptime - started)")
-        let old = client
-        client = manager; shares = newShares; entries = newEntries
+        let old = session
+        session = manager; shares = newShares; entries = newEntries
         share = targetShare; path = targetPath; connected = true
         showingConnections = false; connectionNeedsSetup = false; connectionError = nil
-        Task { await SMBBrowsingService.disconnect(old) }
+        Task { await old?.disconnect() }
     }
     func refreshConnection() {
         guard connected, !busy, playing == nil else { return }
-        if share.isEmpty {
+        if isShareListing {
             perform("Reconnecting…") { [self] in
-                guard let client else { return }
-                let names = try await SMBBrowsingService.listShares(client)
+                guard let session else { return }
+                let names = try await session.listShares()
                 try Task.checkCancellation()
                 shares = names
             }
@@ -171,47 +180,47 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         }
     }
     func favoriteLocation(path: String) -> FavoriteLocation? {
-        guard let client else { return nil }
-        return FavoriteLocation(server: client.url, share: share, path: path, connectionID: connectionID)
+        guard let session else { return nil }
+        return FavoriteLocation(server: session.url, share: share, path: path, connectionID: connectionID)
     }
     func favoriteShare(_ name: String) -> FavoriteLocation? {
-        guard let client else { return nil }
-        return FavoriteLocation(server: client.url, share: name, path: "", connectionID: connectionID)
+        guard let session else { return nil }
+        return FavoriteLocation(server: session.url, share: name, path: "", connectionID: connectionID)
     }
     func openFavorite(_ favorite: FavoriteLocation, onOpen: @escaping @MainActor () -> Void) {
         perform("Opening favorite…") { [self] in
             connections.reload()
             guard let saved = connections.resolve(id: favorite.connectionID, server: favorite.server, share: favorite.share),
                   let url = URL(string: saved.server),
-                  let manager = try? SMBBrowsingService.makeClient(server: url.absoluteString, username: saved.username, domain: saved.domain,
+                  let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
                     password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "") else { throw PlayerError("This favorite’s connection is unavailable. Check Connections in Settings.") }
             let contents: [BrowserEntry]
             do {
                 contents = try await readDirectory(favorite.path, shareName: favorite.share, manager: manager, connection: saved)
                 try Task.checkCancellation()
             }
-            catch { await SMBBrowsingService.disconnect(manager); throw error }
-            let old = client
-            client = manager; host = saved.server; connectionID = saved.id
+            catch { await manager.disconnect(); throw error }
+            let old = session
+            session = manager; host = saved.server; connectionID = saved.id
             username = saved.username; domain = saved.domain
             password = connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? ""
             directShare = saved.share; showingConnections = false
             share = favorite.share; path = favorite.path; entries = contents; connected = true
             onOpen()
-            Task { await SMBBrowsingService.disconnect(old) }
+            Task { await old?.disconnect() }
         }
     }
     func back() {
         if !path.isEmpty {
             let parent = (path as NSString).deletingLastPathComponent
             openDirectory(parent == "/" ? "" : parent)
-        } else if !share.isEmpty && directShare.isEmpty {
+        } else if session?.supportsShares == true && !share.isEmpty && directShare.isEmpty {
             perform("Loading shares…") { [self] in
-                guard let client else { return }
+                guard let session else { return }
                 // Some SMB servers reject logoff even after a successful transfer.
                 // Share enumeration opens its own connection, so teardown is best effort.
-                await SMBBrowsingService.disconnect(client)
-                let names = try await SMBBrowsingService.listShares(client, naturalOrder: false)
+                await session.disconnect()
+                let names = try await session.listShares(naturalOrder: false)
                 try Task.checkCancellation()
                 shares = names; share = ""; entries = []
             }
@@ -220,36 +229,36 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
     func disconnect() {
         if busy { cancel() }
         metadataJobs.values.forEach { $0.cancel() }
-        let old = client
-        client = nil; connected = false; entries = []; shares = []; share = ""; path = ""
+        let old = session
+        session = nil; connected = false; entries = []; shares = []; share = ""; path = ""
         password = connections.password(address: host, username: username, domain: domain) ?? ""
-        Task { await SMBBrowsingService.disconnect(old) }
+        Task { await old?.disconnect() }
     }
-    private func ensureShareConnection(_ manager: SMB2Manager, name: String) async throws {
+    private func ensureShareConnection(_ manager: RemoteSession, name: String) async throws {
         // AMSMB2 checks the session with SMB echo and reconnects expired/dropped sessions.
-        do { try await SMBBrowsingService.connectShare(manager, name: name) }
+        do { try await manager.connectShare(name: name) }
         catch {
             try Task.checkCancellation()
-            if manager === client, Self.needsConnectionSetup(error) {
+            if manager === session, Self.needsConnectionSetup(error) {
                 connected = false; connectionNeedsSetup = true
                 connectionError = error.localizedDescription
             }
             throw error
         }
     }
-    func readDirectory(_ target: String, shareName: String? = nil, manager: SMB2Manager? = nil, connection: SMBConnection? = nil) async throws -> [BrowserEntry] {
-        guard let client = manager ?? client else { throw PlayerError("Connect to a server first.") }
+    func readDirectory(_ target: String, shareName: String? = nil, manager: RemoteSession? = nil, connection: SavedConnection? = nil) async throws -> [BrowserEntry] {
+        guard let session = manager ?? session else { throw PlayerError("Connect to a server first.") }
         let progress = PlaybackPositions.shared.allProgress()
-        try await ensureShareConnection(client, name: shareName ?? share)
+        try await ensureShareConnection(session, name: shareName ?? share)
         try Task.checkCancellation()
-        let contents = try await SMBBrowsingService.readDirectory(client, path: target)
+        let contents = try await session.readDirectory(path: target)
         try Task.checkCancellation()
         return contents.map { original in
             var entry = original
             if !entry.directory {
-                entry.progress = progress[PlaybackPositions.key(server: client.url,
+                entry.progress = progress[PlaybackPositions.key(server: session.url,
                     share: shareName ?? share, path: entry.path, size: entry.size)]
-                if entry.progress != nil, let file = PlaybackFile(server: client.url, share: shareName ?? share,
+                if entry.progress != nil, let file = PlaybackFile(server: session.url, share: shareName ?? share,
                     path: entry.path, size: entry.size, username: connection?.username ?? username, domain: connection?.domain ?? domain, connectionID: connection?.id ?? connectionID) {
                     PlaybackPositions.shared.remember(file)
                 }
@@ -260,19 +269,19 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
     func play(_ entry: BrowserEntry) {
         perform("Opening stream…") { [self] in
             let flag = cancellation
-            guard let client else { throw PlayerError("SMB connection closed.") }
-            try await ensureShareConnection(client, name: share)
+            guard let session else { throw PlayerError("Connection closed.") }
+            try await ensureShareConnection(session, name: share)
             try Task.checkCancellation()
             let positionKey = Self.diagnosticPlaybackHistoryEnabled ?
-                PlaybackPositions.key(server: client.url, share: share, path: entry.path, size: entry.size) : nil
-            let media = try await PreparedMedia.stream(client: client, path: entry.path, size: entry.size,
+                PlaybackPositions.key(server: session.url, share: share, path: entry.path, size: entry.size) : nil
+            let media = try await PreparedMedia.stream(session: session, path: entry.path, size: entry.size,
                 title: entry.name, directory: Self.cache, cancellation: flag, positionKey: positionKey)
             if flag.cancelled || Task.isCancelled { media.streaming?.stop(); throw CancellationError() }
             if let route = PlaybackRoute.expected(fileExtension: (entry.name as NSString).pathExtension, vp9: media.info.vp9 != 0) {
-                let key = MediaMetadataCache.key(server: client.url, connectionID: connectionID, share: share, path: entry.path, size: entry.size)
+                let key = MediaMetadataCache.key(server: session.url, connectionID: connectionID, share: share, path: entry.path, size: entry.size)
                 metadataCache.save(duration: media.info.duration, route: route, modified: entry.modified, for: key)
             }
-            if let file = PlaybackFile(server: client.url, share: share, path: entry.path, size: entry.size,
+            if let file = PlaybackFile(server: session.url, share: share, path: entry.path, size: entry.size,
                                        username: username, domain: domain, connectionID: connectionID) { PlaybackPositions.shared.remember(file) }
             activeStream = media.streaming; playing = media
         }
@@ -281,10 +290,10 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         guard !Task.isCancelled,
               let saved = connections.resolve(id: location.connectionID, server: location.server, share: location.share),
               let url = URL(string: saved.server),
-              let manager = try? SMBBrowsingService.makeClient(server: url.absoluteString, username: saved.username, domain: saved.domain,
+              let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
                     password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "", timeout: 5) else { return }
         _ = try? await readDirectory(location.path, shareName: location.share, manager: manager, connection: saved)
-        await SMBBrowsingService.disconnect(manager)
+        await manager.disconnect()
     }
     func openWatching(_ file: PlaybackFile) {
         perform("Opening stream…") { [self] in
@@ -293,30 +302,30 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
             guard let saved = connections.resolve(id: file.connectionID, server: file.server,
                     username: file.username, domain: file.domain, share: file.share),
                   let url = URL(string: saved.server),
-                  let manager = try? SMBBrowsingService.makeClient(server: url.absoluteString, username: saved.username, domain: saved.domain,
+                  let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
                     password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "") else { throw PlayerError("This video’s connection is unavailable. Check Connections in Settings.") }
             var adopted = false
-            defer { if !adopted { SMBBrowsingService.abort(manager) } }
-            try await SMBBrowsingService.connectShare(manager, name: file.share)
-            let attributes = try await SMBBrowsingService.attributes(manager, path: file.path)
+            defer { if !adopted { manager.abort() } }
+            try await manager.connectShare(name: file.share)
+            let attributes = try await manager.attributes(path: file.path)
             try Task.checkCancellation()
-            guard (attributes[.fileSizeKey] as? NSNumber)?.int64Value == file.size else {
+            guard attributes.size == file.size else {
                 throw PlayerError("This file has changed. Open it again from Connections.")
             }
-            let media = try await PreparedMedia.stream(client: manager, path: file.path, size: file.size,
+            let media = try await PreparedMedia.stream(session: manager, path: file.path, size: file.size,
                 title: file.name, directory: Self.cache, cancellation: flag, positionKey: Self.diagnosticPlaybackHistoryEnabled ? file.key : nil)
             if flag.cancelled || Task.isCancelled { media.streaming?.stop(); throw CancellationError() }
             if let route = PlaybackRoute.expected(fileExtension: (file.path as NSString).pathExtension, vp9: media.info.vp9 != 0) {
                 let key = MediaMetadataCache.key(server: URL(string: file.server)!, connectionID: file.connectionID, share: file.share, path: file.path, size: file.size)
-                let modified = (attributes[.contentModificationDateKey] as? Date)?.timeIntervalSince1970 ?? 0
+                let modified = attributes.modified
                 metadataCache.save(duration: media.info.duration, route: route, modified: modified, for: key)
             }
-            let old = client
-            client = manager; activeStream = media.streaming; playing = media
+            let old = session
+            session = manager; activeStream = media.streaming; playing = media
             adopted = true
             connectionID = saved.id; host = saved.server; username = saved.username; domain = saved.domain
             password = connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? ""
-            Task { await SMBBrowsingService.disconnect(old) }
+            Task { await old?.disconnect() }
         }
     }
 
@@ -329,10 +338,10 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         busy = false; status = ""; error = nil
         // Do not reuse a session whose outstanding callbacks may still be unwinding.
         // The next connection attempt creates a fresh manager, preserving the current location.
-        let old = client
-        client = old.flatMap { SMBBrowsingService.replacementSession(for: $0) }
-        if client == nil { connected = false }
-        if let old { SMBBrowsingService.abort(old) }
+        let old = session
+        session = old.flatMap { $0.replacement() }
+        if session == nil { connected = false }
+        if let old { old.abort() }
     }
     func playbackEnded() {
         activeStream?.stop(); activeStream = nil
@@ -346,22 +355,22 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         [connectionID ?? "", host, share, entry.id, String(entry.size), String(entry.modified), busy || playing != nil ? "suspended" : "visible"].joined(separator: "\0")
     }
     func loadMetadata(_ entry: BrowserEntry) async {
-        guard !busy, playing == nil, !entry.directory, entry.playable, entry.playbackRoute == nil, let client, connected else { return }
+        guard !busy, playing == nil, !entry.directory, entry.playable, entry.playbackRoute == nil, let session, connected else { return }
         let currentShare = share
-        let key = MediaMetadataCache.key(server: client.url, connectionID: connectionID, share: share, path: entry.path, size: entry.size)
+        let key = MediaMetadataCache.key(server: session.url, connectionID: connectionID, share: share, path: entry.path, size: entry.size)
         var record = metadataCache.value(for: key, modified: entry.modified)
         if record == nil {
             let flag = CancellationFlag()
             let job = UUID()
             metadataJobs[job] = flag
             defer { metadataJobs.removeValue(forKey: job) }
-            let result = await MetadataProbeService.inspect(client: client, path: entry.path, size: entry.size,
+            let result = await MetadataProbeService.inspect(session: session, path: entry.path, size: entry.size,
                 fileExtension: (entry.name as NSString).pathExtension, cancellation: flag)
             guard !Task.isCancelled, !flag.cancelled, let route = result.1 else { return }
             metadataCache.save(duration: result.0, route: route, modified: entry.modified, for: key)
             record = metadataCache.value(for: key, modified: entry.modified)
         }
-        guard !Task.isCancelled, let record, self.client === client, share == currentShare,
+        guard !Task.isCancelled, let record, self.session === session, share == currentShare,
               let index = entries.firstIndex(where: { $0.id == entry.id && $0.size == entry.size && $0.modified == entry.modified }) else { return }
         entries[index].duration = record.duration
         entries[index].playbackRoute = record.route
@@ -373,44 +382,44 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
               PlaybackRoute.expected(fileExtension: (file.name as NSString).pathExtension, vp9: nil) == nil,
               let saved = connections.resolve(id: file.connectionID, server: file.server, username: file.username, domain: file.domain, share: file.share),
               let url = URL(string: saved.server),
-              let manager = try? SMBBrowsingService.makeClient(server: url.absoluteString, username: saved.username, domain: saved.domain,
+              let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
                     password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "", timeout: 5) else { return }
         let flag = CancellationFlag(), job = UUID()
         metadataJobs[job] = flag
         defer { metadataJobs.removeValue(forKey: job) }
-        let result = await MetadataProbeService.inspect(client: manager, path: file.path, size: file.size,
+        let result = await MetadataProbeService.inspect(session: manager, path: file.path, size: file.size,
             fileExtension: (file.name as NSString).pathExtension, shareToConnect: file.share, cancellation: flag)
         guard !Task.isCancelled, !flag.cancelled, let route = result.1 else { return }
         metadataCache.save(duration: result.0, route: route, modified: 0, for: key)
     }
     func deleteFile(_ entry: BrowserEntry) {
-        guard !busy, playing == nil, !entry.directory, let client,
+        guard !busy, playing == nil, !entry.directory, let session, session.canDelete,
               entries.contains(where: { $0.path == entry.path && !$0.directory }) else { return }
         perform("Deleting file…", invalidateConnectionOnFailure: false) { [self] in
-            try await SMBBrowsingService.removeFile(client, path: entry.path)
+            try await session.removeFile(path: entry.path)
             try Task.checkCancellation()
-            PlaybackPositions.shared.clear(PlaybackPositions.key(server: client.url, share: share, path: entry.path, size: entry.size))
+            PlaybackPositions.shared.clear(PlaybackPositions.key(server: session.url, share: share, path: entry.path, size: entry.size))
             entries.removeAll { $0.path == entry.path }
         }
     }
     func deleteWatchingFile(_ file: PlaybackFile, onDelete: @escaping () -> Void) {
-        guard !busy, playing == nil else { return }
+        guard !busy, playing == nil, canDelete(file) else { return }
         perform("Deleting file…", invalidateConnectionOnFailure: false) { [self] in
             connections.reload()
             guard let saved = connections.resolve(id: file.connectionID, server: file.server,
                     username: file.username, domain: file.domain, share: file.share),
                   let url = URL(string: saved.server),
-                  let manager = try? SMBBrowsingService.makeClient(server: url.absoluteString, username: saved.username, domain: saved.domain,
+                  let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
                     password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "") else { throw PlayerError("This video’s connection is unavailable. Check Connections in Settings.") }
-            defer { Task { await SMBBrowsingService.disconnect(manager) } }
-            try await SMBBrowsingService.connectShare(manager, name: file.share)
-            let attributes = try await SMBBrowsingService.attributes(manager, path: file.path)
+            defer { Task { await manager.disconnect() } }
+            try await manager.connectShare(name: file.share)
+            let attributes = try await manager.attributes(path: file.path)
             try Task.checkCancellation()
-            guard attributes[.fileResourceTypeKey] as? URLFileResourceType == .regular,
-                  (attributes[.fileSizeKey] as? NSNumber)?.int64Value == file.size else {
+            guard !attributes.directory,
+                  attributes.size == file.size else {
                 throw PlayerError("This file has changed. Open its folder in Connections before deleting it.")
             }
-            try await SMBBrowsingService.removeFile(manager, path: file.path)
+            try await manager.removeFile(path: file.path)
             try Task.checkCancellation()
             PlaybackPositions.shared.clear(file.key)
             onDelete()
@@ -418,18 +427,18 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         }
     }
     func resetPlayback(_ entry: BrowserEntry) {
-        guard !busy, playing == nil, entry.playable, let client else { return }
-        let key = PlaybackPositions.key(server: client.url, share: share, path: entry.path, size: entry.size)
+        guard !busy, playing == nil, entry.playable, let session else { return }
+        let key = PlaybackPositions.key(server: session.url, share: share, path: entry.path, size: entry.size)
         PlaybackPositions.shared.clear(key)
         refreshProgress()
     }
     func refreshProgress() {
-        if let client {
+        if let session {
             let progress = PlaybackPositions.shared.allProgress()
             entries = entries.map { entry in
                 var updated = entry
                 if !entry.directory {
-                    updated.progress = progress[PlaybackPositions.key(server: client.url,
+                    updated.progress = progress[PlaybackPositions.key(server: session.url,
                         share: share, path: entry.path, size: entry.size)]
                 }
                 return updated

@@ -4,16 +4,16 @@ import AVFoundation
 import AetherEngine
 import Combine
 
-/// Independent cursors share BoraMin's bounded SMB cache. Cancellation interrupts
-/// only the current operation, so an engine probe can cancel without closing SMB.
-final class AetherSMBReader: IOReader, @unchecked Sendable {
-    private let source: SMBRemoteFile
+/// Independent cursors share BoraMin's bounded remote-file cache. Cancellation interrupts
+/// only the current operation, so an engine probe can cancel without closing the remote session.
+final class AetherFileReader: IOReader, @unchecked Sendable {
+    private let source: CachedRemoteFile
     private let cursorLock = NSLock()
     private let stateLock = NSLock()
     private var cursor: Int64 = 0
     private var closed = false
     private var operation: CancellationFlag?
-    init(source: SMBRemoteFile) { self.source = source }
+    init(source: CachedRemoteFile) { self.source = source }
     var discImageProbeEnabled: Bool { false }
     func read(_ buffer: UnsafeMutablePointer<UInt8>?, size: Int32) -> Int32 {
         guard let buffer, size > 0 else { return 0 }
@@ -58,7 +58,7 @@ final class AetherSMBReader: IOReader, @unchecked Sendable {
     }
     func makeIndependentReader() -> (any IOReader)? {
         stateLock.lock(); let isClosed = closed; stateLock.unlock()
-        return isClosed ? nil : AetherSMBReader(source: source)
+        return isClosed ? nil : AetherFileReader(source: source)
     }
 }
 
@@ -80,7 +80,7 @@ final class AetherMKVPlayback {
             self.onItemChanged?(player, item)
         }
     }
-    static func open(source: SMBRemoteFile, fileExtension: String) async throws -> AetherMKVPlayback {
+    static func open(source: CachedRemoteFile, fileExtension: String) async throws -> AetherMKVPlayback {
         let formatHint: String? = fileExtension.lowercased() == "mkv" ? "matroska" : nil
         if CommandLine.arguments.contains("--aether-diagnostics") {
             EngineLog.handler = { print($0); fflush(stdout) }
@@ -97,7 +97,7 @@ final class AetherMKVPlayback {
         return try await withTaskCancellationHandler {
             do {
                 let probe = try await Task.detached(priority: .userInitiated) {
-                    let reader = AetherSMBReader(source: source)
+                    let reader = AetherFileReader(source: source)
                     defer { reader.close() }
                     return try AetherEngine.probe(source: .custom(reader, formatHint: formatHint))
                 }.value
@@ -110,7 +110,7 @@ final class AetherMKVPlayback {
                 let preferredAudio = (supported.first(where: { $0.isDefault }) ?? supported.first).map { Int32($0.id) }
                 if let preferredAudio { print("BORAMIN_AETHER preferred native audio stream=\(preferredAudio)") }
                 do {
-                    try await engine.load(source: .custom(AetherSMBReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
+                    try await engine.load(source: .custom(AetherFileReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
                     if let item = engine.currentAVPlayer?.currentItem, item.status == .failed {
                         throw item.error ?? PlayerError("The native player could not open this video.")
                     }
@@ -126,7 +126,7 @@ final class AetherMKVPlayback {
                           underlying?.domain == "CoreMediaErrorDomain", underlying?.code == -12848 else { throw error }
                     print("BORAMIN_AETHER native configuration rejected; retrying alternate playback path")
                     options.preferredDecodePath = .software
-                    try await engine.load(source: .custom(AetherSMBReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
+                    try await engine.load(source: .custom(AetherFileReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
                 }
                 try Task.checkCancellation()
                 if let item = engine.currentAVPlayer?.currentItem, item.status == .failed {

@@ -40,7 +40,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
     @Published private(set) var pendingCount = 0
     @Published private(set) var lastSync: Date?
     var statusAndLastSync: String {
-        let message = status == "Up to date" ? "Up to Date." : status
+        let message = status == "Up to date" ? "Up to date." : status
         guard let lastSync else { return message }
         return "\(message) Last synced \(lastSync.formatted(date: .abbreviated, time: .shortened))"
     }
@@ -69,7 +69,8 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         if !accountID.isEmpty { loadCache() }
         if let data = defaults.data(forKey: "cloudOutbox.v1"),
            let pending = try? JSONDecoder().decode([String: Value].self, from: data) {
-            for (key, value) in pending {
+            for (key, stored) in pending {
+                let value = Self.normalizedConnection(stored) ?? stored
                 if let existing = state.items[key], newer(existing.value, than: value) { continue }
                 state.items[key] = Item(value: value, systemFields: state.items[key]?.systemFields)
                 state.pending.insert(key)
@@ -86,7 +87,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         }
         if !enabled { status = "Off — saved on this device" }
     }
-    private static func hash(_ text: String) -> String {
+    nonisolated private static func hash(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
     private func id(_ kind: String, _ key: String) -> String { Self.hash(kind + ":" + key) }
@@ -100,6 +101,11 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
             if let file, let data = try? Data(contentsOf: file),
                let cached = try? JSONDecoder().decode(State.self, from: data) {
                 state = cached
+                for key in state.items.keys {
+                    if let value = Self.normalizedConnection(state.items[key]!.value) {
+                        state.items[key]?.value = value
+                    }
+                }
             }
         } catch { storeFailure = error }
     }
@@ -163,7 +169,21 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         }
         return result
     }
-    static func serverURL(_ address: String) -> URL? { ConnectionPreferences.serverURL(address) }
+    static func serverURL(_ address: String) -> URL? { ConnectionPreferences.connectionURL(address) }
+    /// A payload may contain an ID copied from another profile during legacy migration.
+    /// Trust it only when it owns this immutable record; otherwise recover the legacy ID.
+    nonisolated static func normalizedConnection(_ value: Value) -> Value? {
+        guard value.kind == "server" else { return value }
+        guard let address = value.fields["server"], let server = ConnectionPreferences.connectionURL(address) else { return nil }
+        let legacy = ConnectionPreferences.profileID(server: server,
+            username: value.fields["username"] ?? "", domain: value.fields["domain"] ?? "")
+        let candidates = [value.fields["id"], legacy].compactMap { $0 }.filter { !$0.isEmpty }
+        guard let profileID = candidates.first(where: { hash("server:" + $0) == value.id }) else { return nil }
+        var result = value
+        result.fields["id"] = profileID
+        return result
+    }
+
     private func newer(_ left: Value, than right: Value) -> Bool {
         left.updated == right.updated ? left.operation > right.operation : left.updated > right.updated
     }
@@ -172,7 +192,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
               snapshot.state == cached.state,
               cached.fields.allSatisfy({ snapshot.fields[$0.key] == $0.value }) else { return false }
         let added = Set(snapshot.fields.keys).subtracting(cached.fields.keys)
-        return !added.isEmpty && added.isSubset(of: ["id", "connectionID", "identity"])
+        return !added.isEmpty && added.isSubset(of: ["id", "connectionID", "identity", "type"])
     }
     private func capture(initial: Bool = false, allowingApply: Bool = false) {
         guard (!applying || allowingApply), !accountBlocked else { return }
@@ -325,7 +345,8 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
             guard let restored=CKRecord(coder:coder) else { throw SyncError(message:"Could not load iCloud record metadata.") }
             coder.finishDecoding(); record=restored
         } else { record=CKRecord(recordType:"BoraMinUserData",recordID:recordID(key)) }
-        record.encryptedValues["payload"]=try JSONEncoder().encode(item.value) as NSData
+        guard let value = Self.normalizedConnection(item.value) else { throw SyncError(message: "A connection’s iCloud identity could not be verified.") }
+        record.encryptedValues["payload"]=try JSONEncoder().encode(value) as NSData
         if item.value.kind == "server", let address=item.value.fields["server"],
            let password=ConnectionPreferences.shared.password(address:address,username:item.value.fields["username"] ?? "",domain:item.value.fields["domain"] ?? "") {
             record.encryptedValues["password"]=password as NSString
@@ -334,8 +355,9 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
     }
     private func merge(_ record: CKRecord) throws {
         guard record.recordType == "BoraMinUserData", let data=record.encryptedValues["payload"] as? Data else { throw SyncError(message:"An iCloud record could not be decrypted.") }
-        let remote=try JSONDecoder().decode(Value.self,from:data)
-        guard remote.id == record.recordID.recordName else { throw SyncError(message:"Invalid iCloud record identity.") }
+        let decoded=try JSONDecoder().decode(Value.self,from:data)
+        guard decoded.id == record.recordID.recordName else { throw SyncError(message:"Invalid iCloud record identity.") }
+        guard let remote = Self.normalizedConnection(decoded) else { throw SyncError(message: "A connection’s iCloud identity could not be verified.") }
         if let local=state.items[remote.id], state.pending.contains(remote.id), newer(local.value,than:remote) {
             state.items[remote.id]?.systemFields=metadata(record)
         } else {
@@ -348,12 +370,12 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
             try apply(remote)
         }
     }
-    private func apply(_ value: Value) throws {
+    private func apply(_ stored: Value) throws {
+        guard let value = Self.normalizedConnection(stored) else { throw SyncError(message: "A connection’s iCloud identity could not be verified.") }
         let f=value.fields
         switch value.kind {
         case "server":
-            guard let address=f["server"], let server=Self.serverURL(address) else { return }
-            let key=f["id"] ?? ConnectionPreferences.profileID(server:server,username:f["username"] ?? "",domain:f["domain"] ?? "")
+            guard let key = f["id"] else { return }
             ConnectionPreferences.shared.applySyncedProfile(id: key, fields: f,
                 updated: value.updated.timeIntervalSince1970, deleted: value.state == "deleted")
         case "connection":

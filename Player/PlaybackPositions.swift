@@ -59,6 +59,10 @@ struct PlaybackProgress {
         // Identify the original SMB file, not the per-play loopback URL. No
         // credentials are included in the bookmark identity. Display/reopen metadata
         // is stored separately, without passwords.
+        if server.scheme != "smb" {
+            let components = ["http.v1", server.absoluteString, path, String(size)]
+            return SHA256.hash(data: Data(components.joined(separator: "\0").utf8)).map { String(format: "%02x", $0) }.joined()
+        }
         let components = [server.host?.lowercased() ?? "", String(server.port ?? 445),
                           share.lowercased(), path, String(size)]
         return SHA256.hash(data: Data(components.joined(separator: "\0").utf8))
@@ -137,7 +141,7 @@ struct PlaybackProgress {
     }
 }
 
-/// SMB location metadata for displaying and reopening a bookmark; never stores passwords.
+/// Remote location metadata for displaying and reopening a bookmark; never stores passwords.
 struct PlaybackFile: Codable, Equatable {
     let server: String
     let share: String
@@ -149,6 +153,9 @@ struct PlaybackFile: Codable, Equatable {
     var name: String { (path as NSString).lastPathComponent }
     var folderLocation: String {
         let folder = (path as NSString).deletingLastPathComponent
+        if let root = URL(string: server), root.scheme != "smb" {
+            return folder.isEmpty ? server : root.appendingPathComponent(folder, isDirectory: true).absoluteString
+        }
         return folder.isEmpty ? "\(server)/\(share)" : "\(server)/\(share)/\(folder)"
     }
     var key: String { PlaybackPositions.key(server: URL(string: server)!, share: share, path: path, size: size) }
@@ -158,6 +165,13 @@ struct PlaybackFile: Codable, Equatable {
         return result
     }
     init?(server: URL, share: String, path: String, size: Int64, username: String, domain: String, connectionID: String? = nil) {
+        if ["http", "https"].contains(server.scheme ?? "") {
+            guard share.isEmpty, server.user == nil, server.password == nil, server.query == nil, server.fragment == nil,
+                  server.host != nil, !path.isEmpty, size > 0 else { return nil }
+            self.server = server.absoluteString; self.share = ""; self.path = path; self.size = size
+            self.username = username; self.domain = ""; self.connectionID = connectionID
+            return
+        }
         guard server.scheme == "smb", let host = server.host, !host.isEmpty,
               !share.isEmpty, !path.isEmpty, size > 0 else { return nil }
         var clean = URLComponents()

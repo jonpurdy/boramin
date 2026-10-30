@@ -9,8 +9,18 @@ struct FavoriteLocation: Codable, Identifiable, Hashable {
     let identity: String?
 
     var id: String { identity ?? [connectionID ?? server, share.lowercased(), path].joined(separator: "\0") }
-    var name: String { path.isEmpty ? share : (path as NSString).lastPathComponent }
-    var location: String { "\(server)/\(share)\(path.isEmpty ? "" : "/\(path)")" }
+    var name: String {
+        if !path.isEmpty { return (path as NSString).lastPathComponent }
+        if !share.isEmpty { return share }
+        let root = URL(string: server)
+        return root?.path.split(separator: "/").last.map(String.init) ?? root?.host ?? server
+    }
+    var location: String {
+        if let root = URL(string: server), root.scheme != "smb" {
+            return path.isEmpty ? server : root.appendingPathComponent(path).absoluteString
+        }
+        return "\(server)/\(share)\(path.isEmpty ? "" : "/\(path)")"
+    }
 
     static func alphabeticallyPrecedes(_ lhs: FavoriteLocation, _ rhs: FavoriteLocation) -> Bool {
         let order = lhs.name.localizedStandardCompare(rhs.name)
@@ -18,6 +28,13 @@ struct FavoriteLocation: Codable, Identifiable, Hashable {
     }
 
     init?(server: URL, share: String, path: String, connectionID: String? = nil, identity: String? = nil) {
+        if ["http", "https"].contains(server.scheme ?? "") {
+            guard share.isEmpty, server.user == nil, server.password == nil, server.query == nil, server.fragment == nil,
+                  server.host != nil else { return nil }
+            self.server = server.absoluteString; self.share = ""; self.path = path
+            self.connectionID = connectionID; self.identity = identity
+            return
+        }
         guard server.scheme == "smb", let host = server.host, !host.isEmpty, !share.isEmpty else { return nil }
         // Store locations only, never URL credentials or passwords.
         var components = URLComponents()

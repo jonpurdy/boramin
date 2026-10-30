@@ -84,7 +84,21 @@ struct PlayerError: LocalizedError {
 final class CancellationFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
-    func cancel() { lock.lock(); value = true; lock.unlock() }
+    private var handlers: [UUID: @Sendable () -> Void] = [:]
+    func cancel() {
+        lock.lock(); value = true
+        let callbacks = Array(handlers.values); handlers.removeAll(); lock.unlock()
+        callbacks.forEach { $0() }
+    }
+    /// HTTP header probes can be cancelled by the same flag as blocking media reads.
+    func onCancel(_ handler: @escaping @Sendable () -> Void) -> UUID {
+        let id = UUID()
+        lock.lock()
+        if value { lock.unlock(); handler() }
+        else { handlers[id] = handler; lock.unlock() }
+        return id
+    }
+    func removeHandler(_ id: UUID) { lock.lock(); handlers.removeValue(forKey: id); lock.unlock() }
     var cancelled: Bool { lock.lock(); defer { lock.unlock() }; return value }
 }
 
@@ -170,13 +184,16 @@ final class PreparedMedia: Identifiable {
     }
 
     static func stream(client: SMB2Manager, path: String, size: Int64, title: String, directory: URL, cancellation: CancellationFlag, positionKey: String? = nil) async throws -> Self {
-        guard size > 0 else { throw PlayerError("This SMB file is empty or its size is unavailable.") }
-        let source = SMBRemoteFile(client: client, path: path, size: size, cancellation: cancellation)
+        try await stream(session: RemoteSession(smb: client), path: path, size: size, title: title, directory: directory, cancellation: cancellation, positionKey: positionKey)
+    }
+    static func stream(session: RemoteSession, path: String, size: Int64, title: String, directory: URL, cancellation: CancellationFlag, positionKey: String? = nil) async throws -> Self {
+        guard size > 0 else { throw PlayerError("This file is empty or its size is unavailable.") }
+        let source = try await session.openFile(path: path, size: size, cancellation: cancellation)
         let ext = (path as NSString).pathExtension
         let transport = try StreamingSession(source: source, fileExtension: (path as NSString).pathExtension)
         do {
             try await transport.start()
-            let subtitles = await ExternalSubtitles.discover(client: client, path: path, playbackCancellation: cancellation)
+            let subtitles = await ExternalSubtitles.discover(session: session, path: path, playbackCancellation: cancellation)
             await transport.setExternalSubtitles(subtitles)
             guard !cancellation.cancelled else { throw CancellationError() }
             // Identify VP9 before the general MKV route, using the existing demuxer.
@@ -381,11 +398,11 @@ final class HardwareVideo: @unchecked Sendable {
     private var outputTime = -1.0
     var queuedTime: Double { lock.lock(); defer { lock.unlock() }; return outputTime }
     private let path: String
-    private let remote: SMBRemoteFile?
+    private let remote: CachedRemoteFile?
     var failure: ((String) -> Void)?
     var firstFrame: (() -> Void)?
 
-    init(path: String, remote: SMBRemoteFile? = nil) { self.path = path; self.remote = remote; layer.videoGravity = .resizeAspect }
+    init(path: String, remote: CachedRemoteFile? = nil) { self.path = path; self.remote = remote; layer.videoGravity = .resizeAspect }
     func logPerformance(sessionID: UUID) {
         let session = sessionID.uuidString
         let queued = queuedTime
@@ -823,7 +840,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             let loader = StreamingFileLoader(source: streaming.source, fileExtension: media.timeline.pathExtension.lowercased())
             fileLoader = loader
             item = AVPlayerItem(asset: loader.makeAsset())
-            playbackLog.notice("Native SMB resource loader enabled")
+            playbackLog.notice("Native remote-file resource loader enabled")
         } else { item = AVPlayerItem(url: media.timeline) }
         if (CommandLine.arguments.contains("--exercise-remux-controls") || CommandLine.arguments.contains("--probe-frames-only") || CommandLine.arguments.contains("--exercise-remux-faults")) && !media.usesSampleBufferVideo {
             let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)

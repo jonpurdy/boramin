@@ -3,9 +3,9 @@ import SwiftUI
 /// Saved connections use platform-standard list rows; opening connects only on demand.
 struct ConnectionsList: View {
     @ObservedObject private var store = ConnectionPreferences.shared
-    var onOpen: ((SMBConnection) -> Void)? = nil
+    var onOpen: ((SavedConnection) -> Void)? = nil
     @State private var editor: ConnectionDraft?
-    @State private var connectionToDelete: SMBConnection?
+    @State private var connectionToDelete: SavedConnection?
     #if os(macOS)
     @State private var selection = Set<String>()
     #endif
@@ -73,7 +73,7 @@ struct ConnectionsList: View {
         }
         #endif
     }
-    private func row(_ connection: SMBConnection) -> some View {
+    private func row(_ connection: SavedConnection) -> some View {
         HStack {
             Image(systemName: "externaldrive.connected.to.line.below")
             VStack(alignment: .leading, spacing: 4) {
@@ -84,7 +84,7 @@ struct ConnectionsList: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
-    private func open(_ connection: SMBConnection) {
+    private func open(_ connection: SavedConnection) {
         if let onOpen { onOpen(connection) }
         else { editor = ConnectionDraft(connection: connection) }
     }
@@ -98,9 +98,11 @@ private struct ConnectionDraft: Identifiable {
     var password = ""
     var domain = ""
     var share = ""
+    var kind: ConnectionKind = .smb
     var existing = false
-    @MainActor init(connection: SMBConnection? = nil) {
+    @MainActor init(connection: SavedConnection? = nil) {
         if let connection {
+            kind = connection.kind
             id = connection.id; name = connection.name; server = connection.server
             username = connection.username; domain = connection.domain; share = connection.share
             password = ConnectionPreferences.shared.password(address: server, username: username, domain: domain) ?? ""
@@ -148,13 +150,20 @@ private struct ConnectionEditor: View {
         #endif
     }
     @ViewBuilder private var fields: some View {
+        if !draft.existing {
+            Picker("Connection Type", selection: $draft.kind) {
+                ForEach(ConnectionKind.allCases) { kind in Text(kind.title).tag(kind) }
+            }
+        }
         TextField("Name (optional)", text: $draft.name)
-        TextField("Server", text: $draft.server)
-        TextField("Username (empty for guest)", text: $draft.username)
-        SecureField("Password", text: $draft.password)
-        TextField("Domain (optional)", text: $draft.domain)
-        TextField("Share (optional)", text: $draft.share)
-        Text("Leave Share empty to browse the server’s shares. Passwords are saved in Keychain. Saving does not require the server to be online. Changes apply the next time you open the connection.")
+        TextField(draft.kind == .smb ? "Server" : "Base URL (https://server/media/)", text: $draft.server)
+        TextField(draft.kind == .smb ? "Username (empty for guest)" : "Username (optional)", text: $draft.username)
+        SecureField(draft.kind == .smb ? "Password" : "Password (optional)", text: $draft.password)
+        if draft.kind == .smb {
+            TextField("Domain (optional)", text: $draft.domain)
+            TextField("Share (optional)", text: $draft.share)
+        }
+        Text(draft.kind == .http ? "Browse a Caddy JSON file listing. HTTP connections are read-only. Passwords are saved in Keychain; use HTTPS to protect credentials and media in transit." : "Leave Share empty to browse the server’s shares. Passwords are saved in Keychain. Saving does not require the server to be online. Changes apply the next time you open the connection.")
             .font(.caption).foregroundStyle(.secondary)
         if let error { Text(error).foregroundStyle(.red) }
         #if os(tvOS)
@@ -163,14 +172,14 @@ private struct ConnectionEditor: View {
         #endif
     }
     private func save() {
-        guard let url = ConnectionPreferences.serverURL(draft.server) else {
-            error = "Enter a server name or IP address, such as smb://nas.local. Enter the share separately."
+        guard let url = ConnectionPreferences.connectionURL(draft.server), (url.scheme == "smb") == (draft.kind == .smb) else {
+            error = draft.kind == .smb ? "Enter a server name or IP address, such as smb://nas.local. Enter the share separately." : "Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment."
             return
         }
         do {
             try ConnectionPreferences.shared.save(server: url, username: draft.username, domain: draft.domain,
                 share: draft.share, password: draft.password, id: draft.id,
-                name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines), select: false)
+                name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines), select: false, kind: draft.kind)
             dismiss()
         } catch { self.error = error.localizedDescription }
     }
@@ -189,17 +198,33 @@ struct ConnectionsPanel: View {
 #endif
 
 struct ConnectionEditButton: View {
-    let connection: SMBConnection
+    let connection: SavedConnection
     @State private var editor: ConnectionDraft?
     var body: some View {
-        Button("Edit Connection…") { editor = ConnectionDraft(connection: connection) }
-            .sheet(item: $editor) { draft in ConnectionEditor(draft: draft) }
+        VStack(spacing: 0) {
+            Button("Edit Connection…") {
+                guard editor == nil else { return }
+                editor = ConnectionDraft(connection: connection)
+            }
+        }
+        // Present outside the action button and reset styles inherited from
+        // ContentUnavailableView.actions before hosting editable form controls.
+        .sheet(item: $editor) { draft in
+            ConnectionEditor(draft: draft)
+                #if os(iOS)
+                .buttonStyle(.automatic)
+                .textFieldStyle(.automatic)
+                #endif
+        }
     }
 }
 
 extension FavoriteLocation {
     @MainActor var currentLocation: String {
         let address = ConnectionPreferences.shared.resolve(id: connectionID, server: server, share: share)?.server ?? server
+        if let root = URL(string: address), root.scheme != "smb" {
+            return path.isEmpty ? address : root.appendingPathComponent(path, isDirectory: true).absoluteString
+        }
         return "\(address)/\(share)\(path.isEmpty ? "" : "/\(path)")"
     }
 }
@@ -208,6 +233,9 @@ extension PlaybackFile {
     @MainActor var currentFolderLocation: String {
         let address = ConnectionPreferences.shared.resolve(id: connectionID, server: server, username: username, domain: domain, share: share)?.server ?? server
         let folder = (path as NSString).deletingLastPathComponent
+        if let root = URL(string: address), root.scheme != "smb" {
+            return folder.isEmpty ? address : root.appendingPathComponent(folder, isDirectory: true).absoluteString
+        }
         return folder.isEmpty ? "\(address)/\(share)" : "\(address)/\(share)/\(folder)"
     }
 }

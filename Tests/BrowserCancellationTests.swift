@@ -118,7 +118,7 @@ private final class Callback<Value>: @unchecked Sendable {
         print("PASS: an uncooperative old task cannot show an error or clear a newer task's busy state")
 
         // Reproduce a previous connection screen without starting network work.
-        let saved = SMBConnection(id: "home-navigation", fields: ["server": "smb://127.0.0.1"])!
+        let saved = SavedConnection(id: "home-navigation", fields: ["server": "smb://127.0.0.1"])!
         browser.openConnection(saved)
         browser.cancel() // Cancel before the model-owned task starts.
         precondition(!browser.showingConnections)
@@ -132,7 +132,7 @@ private final class Callback<Value>: @unchecked Sendable {
 
         let manager = try SMBBrowsingService.makeClient(server: "smb://127.0.0.1", username: "guest", domain: "", password: "")
         let normalFlag = CancellationFlag()
-        let normalSource = SMBRemoteFile(client: manager, path: "unused.mp4", size: 100, cancellation: normalFlag)
+        let normalSource = CachedRemoteFile(client: manager, path: "unused.mp4", size: 100, cancellation: normalFlag)
         let transport = try StreamingSession(source: normalSource, fileExtension: "mp4")
         try await transport.start()
         precondition((transport.sourceURL.port ?? 0) > 0)
@@ -140,7 +140,7 @@ private final class Callback<Value>: @unchecked Sendable {
         precondition(normalFlag.cancelled)
         print("PASS: normal streaming listener starts and stops without reading SMB")
         let flag = CancellationFlag(); flag.cancel()
-        let source = SMBRemoteFile(client: manager, path: "unused.mkv", size: 100, cancellation: flag)
+        let source = CachedRemoteFile(client: manager, path: "unused.mkv", size: 100, cancellation: flag)
         do { _ = try source.read(offset: 0, count: 10); preconditionFailure("Cancelled blocking reader started") }
         catch is CancellationError { }
         let preparation = Task {

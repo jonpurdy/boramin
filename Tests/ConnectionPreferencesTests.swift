@@ -79,6 +79,41 @@ import Security
         precondition(store.selected?.id == "shared-account")
         precondition(store.password(address: remaining.server, username: remaining.username, domain: remaining.domain) == "shared-test")
 
+        let httpRoot = ConnectionPreferences.connectionURL("HTTPS://EXAMPLE.invalid:443/Media")!
+        precondition(httpRoot.absoluteString == "https://example.invalid/Media/")
+        precondition(ConnectionPreferences.connectionURL("http://example.invalid:80/")!.absoluteString == "http://example.invalid/")
+        for invalid in ["https://user:password@example.invalid/", "https://example.invalid/?token=x", "https://example.invalid/#x", "https://example.invalid/media/../", "ftp://example.invalid/"] {
+            precondition(ConnectionPreferences.connectionURL(invalid) == nil)
+        }
+        let legacySMBFields = store.connection(id: "shared-account")!.fields
+        try store.save(server: httpRoot, username: "test-user", domain: "", share: "", password: "http-test",
+                       id: "http-test", select: false, kind: .http)
+        precondition(store.connection(id: "http-test")?.kind == .http)
+        precondition(store.connection(id: "http-test")?.fields["type"] == "http")
+        precondition(store.password(address: httpRoot.absoluteString, username: "test-user", domain: "") == "http-test")
+        precondition(store.password(address: "https://example.invalid/Other/", username: "test-user", domain: "") == nil)
+        precondition(store.password(address: "http://example.invalid/Media/", username: "test-user", domain: "") == nil)
+        precondition(store.connection(id: "shared-account")!.fields == legacySMBFields)
+        precondition(legacySMBFields["type"] == nil, "Legacy SMB cloud payload must stay unchanged")
+        do {
+            try store.save(server: server, username: "test-user", domain: "", share: "", password: "unused", id: "http-test")
+            preconditionFailure("Editing changed the saved connection type")
+        } catch { }
+        for (index, pair) in [("", ""), ("fixture", ""), ("", "test-only"), ("fixture", "test-only")].enumerated() {
+            let root = URL(string: "https://example.invalid/optional-\(index)/")!
+            try store.save(server: root, username: pair.0, domain: "", share: "", password: pair.1, id: "optional-\(index)", select: false, kind: .http)
+            precondition(store.connection(id: "optional-\(index)")?.username == pair.0)
+            precondition(store.password(address: root.absoluteString, username: pair.0, domain: "") == pair.1)
+        }
+        print("PASS: both HTTP credential fields are independently optional and persist through Keychain")
+        let httpFields = store.connection(id: "http-test")!.fields
+        store.applySyncedProfile(id: "http-copy", fields: httpFields, updated: 500, deleted: false)
+        store.reload()
+        precondition(store.connection(id: "http-copy")?.server == httpRoot.absoluteString)
+        precondition(store.connection(id: "shared-account")!.fields == legacySMBFields)
+        precondition(SavedConnection(id: "unknown", fields: ["server": httpRoot.absoluteString]) == nil)
+        print("PASS: HTTP roots, isolated Keychain credentials, fixed connection types and additive cloud profiles preserve SMB data")
+
         let migrationSuite = suite + ".migration"
         let legacy = UserDefaults(suiteName: migrationSuite)!
         defer { legacy.removePersistentDomain(forName: migrationSuite) }

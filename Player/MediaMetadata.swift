@@ -35,7 +35,8 @@ enum PlaybackRoute: String, Codable {
         records = defaults.data(forKey: storageKey).flatMap { try? JSONDecoder().decode([String: Record].self, from: $0) } ?? [:]
     }
     nonisolated static func key(server: URL, connectionID: String?, share: String, path: String, size: Int64) -> String {
-        let parts = [connectionID ?? "", server.host?.lowercased() ?? "", String(server.port ?? 445), share.lowercased(), path, String(size)]
+        let address = server.scheme == "smb" ? (server.host?.lowercased() ?? "") : server.absoluteString
+        let parts = [connectionID ?? "", address, String(server.port ?? 445), share.lowercased(), path, String(size)]
         return SHA256.hash(data: Data(parts.joined(separator: "\0").utf8)).map { String(format: "%02x", $0) }.joined()
     }
     func value(for key: String, modified: Double? = nil) -> Record? {

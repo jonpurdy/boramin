@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('probe', choices=['software', 'ass', 'external', 'native', 'hardware', 'codecs', 'connections', 'failure', 'browsing', 'cancellation', 'deletion'])
+parser.add_argument('probe', choices=['software', 'ass', 'external', 'native', 'hardware', 'codecs', 'connections', 'failure', 'browsing', 'cancellation', 'deletion', 'http'])
 parser.add_argument('fixtures', nargs='+', help='Fixture paths/arguments passed to the probe')
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent

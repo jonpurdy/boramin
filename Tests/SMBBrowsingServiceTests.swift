@@ -32,7 +32,7 @@ import Foundation
         print("PASS: server normalization and rejection of credentials, share paths and unsupported schemes")
 
         let flag = CancellationFlag(); flag.cancel()
-        let cancelled = await MetadataProbeService.inspect(client: client, path: "unused.mkv", size: 1, fileExtension: "mkv", cancellation: flag)
+        let cancelled = await MetadataProbeService.inspect(session: RemoteSession(smb: client), path: "unused.mkv", size: 1, fileExtension: "mkv", cancellation: flag)
         precondition(cancelled.0 == nil && cancelled.1 == nil)
         print("PASS: cancelled metadata probe returns without opening a remote file")
     }

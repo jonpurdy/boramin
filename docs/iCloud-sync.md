@@ -16,6 +16,18 @@ Favorites and Watching metadata carry an optional connection ID. Migration attac
 
 Local tests cover account isolation, stable edits, migration, cloud field application and additive sync metadata. All-device live multi-connection iCloud delivery and GUI flows still require user testing.
 
+## HTTP connection compatibility (October 30, 2026)
+
+HTTP profiles add `type: http` inside the existing encrypted server payload and retain the full canonical base URL. Missing types still mean SMB. SMB profile IDs, Keychain accounts, favorite identities and playback hashes remain unchanged. HTTP Keychain identities include scheme, normalized base URL (including its case-sensitive path), and username; they cannot collide with SMB accounts. HTTP bookmarks and local metadata keys also distinguish the scheme and base path. Credentials still use the existing encrypted CloudKit password field; no new record schema is needed.
+
+A connection's type is chosen only when adding it and cannot change during editing. HTTP favorites and Watching records retain the existing location fields with an empty share and relative path. Older releases do not support opening HTTP connections; use an updated app on each device for HTTP features. Local fixtures validate profile import, credential isolation and location persistence; this is not a claim of live cross-device CloudKit delivery.
+
+## Connection record identity repair (October 30, 2026)
+
+Server payload IDs are now checked against their existing immutable cloud record names. If a migration copied another profile's UUID into a legacy record, the original credential-derived profile ID is recovered only when it matches that record name. Otherwise the record reports an identity error instead of mutating a guessed profile. Cache restoration, pending outbox restoration, incoming records, local application and outgoing payloads use the same small normalization function.
+
+This keeps the legacy active record and a separate UUID deletion scoped to their own profiles, so application order cannot resurrect the duplicate or remove the legacy connection. Record names, timestamps, operation ordering and valid profile IDs remain unchanged; profiles are not deduplicated by server address. Favorites, Watching and subtitle references are retained. Synthetic regression fixtures reproduce the old order-dependent failure and check deterministic repair, persisted records, pending edits and same-host/HTTP compatibility. The repair was deployed to Mac, iPhone 16 Pro and Apple TV; after reinstalling Apple TV, the user reported it working well. A complete cross-device record inventory was not independently audited.
+
 ## Why CloudKit
 
 CloudKit supports all target platforms. NSUbiquitousKeyValueStore is useful for small preferences, but has a 1 MB total/1024-key limit and is designed for infrequent changes. A media history with independent edits, resets, deletes, and frequent checkpoints benefits from separate CloudKit records. Avoid storing an entire collection as a single JSON cloud value: concurrent devices can overwrite unrelated changes.

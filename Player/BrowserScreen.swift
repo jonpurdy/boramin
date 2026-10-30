@@ -68,7 +68,7 @@ struct BrowserScreen: View {
     private var title: String {
         switch navigation.last {
         case .files, .favoriteFiles:
-            return browser.share.isEmpty ? "Connections" : "\(browser.share)\(browser.path.isEmpty ? "" : " / \(browser.path)")"
+            return browser.isShareListing ? "Connections" : (browser.share.isEmpty ? browser.folderTitle : "\(browser.share)\(browser.path.isEmpty ? "" : " / \(browser.path)")")
         case .favorites: return "Favorites"
         case .watching: return "Watching"
         case .settings: return "Settings"
@@ -215,8 +215,8 @@ struct BrowserScreen: View {
                     List {
                         Group {
                         Button(atFavoriteRoot ? "Back to Favorites" : (browser.path.isEmpty ? "Back" : "Parent folder"), systemImage: "chevron.left") { navigateBack() }
-                            .browserDefaultFocus(browser.share.isEmpty ? browser.shares.isEmpty : firstFocusableEntry == nil, in: listingFocus)
-                        if browser.share.isEmpty {
+                            .browserDefaultFocus(browser.isShareListing ? browser.shares.isEmpty : firstFocusableEntry == nil, in: listingFocus)
+                        if browser.isShareListing {
                             ForEach(browser.shares, id: \.self) { share in
                                 Button(share, systemImage: "externaldrive.connected.to.line.below") { browser.openShare(share) }
                                     .browserDefaultFocus(share == browser.shares.first, in: listingFocus)
@@ -240,7 +240,7 @@ struct BrowserScreen: View {
                                     .contextMenu {
                                         if entry.directory { favoriteMenu(browser.favoriteLocation(path: entry.path)) }
                                         else {
-                                            Button("Delete File…", systemImage: "trash", role: .destructive) { fileToDelete = entry }
+                                            if browser.canDeleteFiles { Button("Delete File…", systemImage: "trash", role: .destructive) { fileToDelete = entry } }
                                         if entry.playable {
                                             Button("Reset playback", systemImage: "arrow.counterclockwise") {
                                                 browser.resetPlayback(entry)
@@ -374,8 +374,10 @@ struct BrowserScreen: View {
                     .disabled(video.file == nil)
                     .contextMenu {
                         if let file = video.file {
-                            Button("Delete File…", systemImage: "trash", role: .destructive) { watchingFileToDelete = file }
-                                .disabled(watchingBrowser.busy)
+                            if watchingBrowser.canDelete(file) {
+                                Button("Delete File…", systemImage: "trash", role: .destructive) { watchingFileToDelete = file }
+                                    .disabled(watchingBrowser.busy)
+                            }
                         }
                         Button("Reset playback", systemImage: "arrow.counterclockwise") {
                             PlaybackPositions.shared.clear(video.id)

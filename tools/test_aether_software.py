@@ -6,7 +6,7 @@ import plistlib
 import subprocess
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--probe', choices=['software', 'ass', 'external', 'native', 'hardware', 'codecs', 'connections', 'failure', 'browsing', 'cancellation', 'deletion'], default='software')
+parser.add_argument('--probe', choices=['software', 'ass', 'external', 'native', 'hardware', 'codecs', 'connections', 'failure', 'browsing', 'cancellation', 'deletion', 'http'], default='software')
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 project = root / 'build/AetherSoftwareTests/Probe.xcodeproj'
@@ -17,9 +17,9 @@ for obj in data['objects'].values():
     if obj.get('isa') == 'PBXFileReference' and obj.get('sourceTree') == 'SOURCE_ROOT':
         path = obj['path']
         if path == 'MacOS/MacApp.swift':
-            probe = {'ass': 'Tests/StyledASSPlaybackProbe.swift', 'external': 'Tests/ExternalSubtitleProbe.swift', 'software': 'Tests/AetherSoftwarePlaybackProbe.swift', 'native': 'Tests/MacPlaybackProbe.swift', 'hardware': 'Tests/PlaybackProbe.swift', 'codecs': 'Tests/MKVCodecTests.swift', 'connections': 'Tests/ConnectionOpeningProbe.swift', 'failure': 'Tests/PlaybackFailureProbe.swift', 'browsing': 'Tests/SMBBrowsingServiceTests.swift', 'cancellation': 'Tests/BrowserCancellationTests.swift', 'deletion': 'Tests/SMBDeletionProbe.swift'}[args.probe]
+            probe = {'ass': 'Tests/StyledASSPlaybackProbe.swift', 'external': 'Tests/ExternalSubtitleProbe.swift', 'software': 'Tests/AetherSoftwarePlaybackProbe.swift', 'native': 'Tests/MacPlaybackProbe.swift', 'hardware': 'Tests/PlaybackProbe.swift', 'codecs': 'Tests/MKVCodecTests.swift', 'connections': 'Tests/ConnectionOpeningProbe.swift', 'failure': 'Tests/PlaybackFailureProbe.swift', 'browsing': 'Tests/SMBBrowsingServiceTests.swift', 'cancellation': 'Tests/BrowserCancellationTests.swift', 'deletion': 'Tests/SMBDeletionProbe.swift', 'http': 'Tests/HTTPTransportTests.swift'}[args.probe]
             entry = (root / probe).read_text()
-            if args.probe in ('native', 'hardware', 'codecs', 'connections', 'failure', 'browsing', 'cancellation', 'deletion'):
+            if args.probe in ('native', 'hardware', 'codecs', 'connections', 'failure', 'browsing', 'cancellation', 'deletion', 'http'):
                 # Browser views reference this production model, normally defined beside @main.
                 model = (root / 'MacOS/MacApp.swift').read_text().split('@MainActor final class MacLibrary:', 1)[1]
                 entry += '\nimport SwiftUI\n@MainActor final class MacLibrary:' + model

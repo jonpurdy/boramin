@@ -89,17 +89,17 @@ final class StreamingAudioLoader: NSObject, AVAssetResourceLoaderDelegate, @unch
     }
 }
 
-/// Native SMB file loading. AVFoundation owns parsing, decoding and controls;
-/// the delegate returns unmodified bytes from the existing bounded SMB cache.
+/// Native remote-file loading. AVFoundation owns parsing, decoding and controls;
+/// the delegate returns unmodified bytes from the shared bounded cache.
 final class StreamingFileLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
     private let queue = DispatchQueue(label: "BoraMin.fileAssetLoader")
-    private let source: SMBRemoteFile
+    private let source: CachedRemoteFile
     private let contentType: String
     private let url: URL
     private var tasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var stopped = false
 
-    init(source: SMBRemoteFile, fileExtension: String) {
+    init(source: CachedRemoteFile, fileExtension: String) {
         self.source = source
         contentType = fileExtension == "mov" ? AVFileType.mov.rawValue : AVFileType.mp4.rawValue
         url = URL(string: "boramin-file://\(UUID().uuidString)/source.\(fileExtension)")!
@@ -134,7 +134,7 @@ final class StreamingFileLoader: NSObject, AVAssetResourceLoaderDelegate, @unche
                 while offset < end {
                     try Task.checkCancellation()
                     let data = try source.read(offset: offset, count: Int(min(256 * 1024, end - offset)))
-                    guard !data.isEmpty else { throw PlayerError("Unexpected end of SMB file.") }
+                    guard !data.isEmpty else { throw PlayerError("Unexpected end of remote file.") }
                     try Task.checkCancellation()
                     let accepted = await withCheckedContinuation { continuation in
                         queue.async { [self] in

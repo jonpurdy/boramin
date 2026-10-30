@@ -95,8 +95,10 @@ struct MacLibraryView: View {
                 if let file = item.file { Button("Resume") { library.watchingBrowser.openWatching(file) } }
                 Button("Reset Playback") { PlaybackPositions.shared.clear(item.id); refreshSavedLists() }
                 if let file = item.file {
-                    Button("Delete File…", role: .destructive) { watchingFileToDelete = file }
-                        .disabled(library.watchingBrowser.busy)
+                    if library.files.canDelete(file) {
+                        Button("Delete File…", role: .destructive) { watchingFileToDelete = file }
+                            .disabled(library.watchingBrowser.busy)
+                    }
                 }
             }
         } primaryAction: { ids in
@@ -160,7 +162,7 @@ private struct MacFilesView: View {
     @State private var sortOrder = [KeyPathComparator(\MacFileRow.name, comparator: .localizedStandard)]
     @Environment(\.scenePhase) private var phase
     private var rows: [MacFileRow] {
-        let rows = browser.share.isEmpty ? browser.shares.map { MacFileRow(id: $0, name: $0, displayName: $0, directory: true, size: 0, entry: nil) } :
+        let rows = browser.isShareListing ? browser.shares.map { MacFileRow(id: $0, name: $0, displayName: $0, directory: true, size: 0, entry: nil) } :
             browser.entries.filter { allFiles || $0.directory || $0.playable }.map { MacFileRow(id: $0.id, name: $0.name, displayName: $0.displayName, directory: $0.directory, size: $0.size, entry: $0) }
         return rows.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }.sorted(using: sortOrder)
     }
@@ -177,7 +179,7 @@ private struct MacFilesView: View {
                     if favorites.contains(favorite) { Button("Remove Favorite") { favorites.remove(favorite) } }
                     else { Button("Favorite") { favorites.add(favorite) } }
                 }
-                if let entry = row.entry, !entry.directory {
+                if let entry = row.entry, !entry.directory, browser.canDeleteFiles {
                     Button("Delete File…", role: .destructive) { fileToDelete = entry }
                 }
                 if let entry = row.entry, entry.progress != nil { Button("Reset Playback") { browser.resetPlayback(entry) } }
@@ -187,8 +189,8 @@ private struct MacFilesView: View {
             Button("Delete", role: .destructive) { browser.deleteFile(entry); fileToDelete = nil; selection.remove(entry.id) }
             Button("Cancel", role: .cancel) { fileToDelete = nil }
         } message: { entry in Text("Permanently delete \(entry.name) from the server? This cannot be undone.") }
-        .navigationTitle(browser.share.isEmpty ? "Connections" : (browser.path.isEmpty ? browser.share : (browser.path as NSString).lastPathComponent))
-        .navigationSubtitle(browser.share.isEmpty ? "SMB Shares" : "\(browser.share)/\(browser.path)")
+        .navigationTitle(browser.isShareListing ? "Connections" : browser.folderTitle)
+        .navigationSubtitle(browser.isShareListing ? "SMB Shares" : (browser.share.isEmpty ? browser.path : "\(browser.share)/\(browser.path)"))
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button { if let rootBack, browser.path == rootPath { rootBack() } else { browser.back() } } label: { Label("Enclosing Folder", systemImage: "chevron.left") }

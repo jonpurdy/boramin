@@ -92,7 +92,7 @@ final class MacPlayerView: AVPlayerView {
             let loader = StreamingFileLoader(source: stream.source, fileExtension: media.timeline.pathExtension.lowercased())
             fileLoader = loader
             item = AVPlayerItem(asset: loader.makeAsset())
-            macPlaybackLog.notice("Native SMB resource loader enabled")
+            macPlaybackLog.notice("Native remote-file resource loader enabled")
         } else { item = AVPlayerItem(url: media.timeline) }
         item.preferredForwardBufferDuration = media.usesSampleBufferVideo ? 3 : 0
         player = media.streaming?.aetherPlayer ?? AVPlayer(playerItem: item)

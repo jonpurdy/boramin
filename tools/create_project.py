@@ -17,7 +17,7 @@ project = root/'BoraMin.xcodeproj'
 project.mkdir(exist_ok=True)
 platforms = {
     'ios': dict(name='BoraMin iOS', sdk='iphoneos', folder='iOS', deployment=('IPHONEOS_DEPLOYMENT_TARGET', '26.0'), ffmpeg='ffmpeg-ios', icon='Assets/BoraMin.icon', icon_type='folder.iconcomposer.icon', icon_name='BoraMin', entitlements='iOS/BoraMin.entitlements', info='iOS/Info.plist'),
-    'tvos': dict(name='BoraMin tvOS', sdk='appletvos', folder='Player', deployment=('TVOS_DEPLOYMENT_TARGET', '26.6'), ffmpeg='ffmpeg', icon='Assets/BoraMinTV.xcassets', icon_type='folder.assetcatalog', icon_name='AppIcon', entitlements='Config/BoraMin.entitlements', info='Player/Info.plist'),
+    'tvos': dict(name='BoraMin tvOS', sdk='appletvos', folder='Player', deployment=('TVOS_DEPLOYMENT_TARGET', '26.2'), ffmpeg='ffmpeg', icon='Assets/BoraMinTV.xcassets', icon_type='folder.assetcatalog', icon_name='AppIcon', entitlements='Config/BoraMin.entitlements', info='Player/Info.plist'),
     'macos': dict(name='BoraMin macOS', sdk='macosx', folder='MacOS', deployment=('MACOSX_DEPLOYMENT_TARGET', '15.0'), ffmpeg='ffmpeg-macos', icon='MacOS/Assets.xcassets', icon_type='folder.assetcatalog', icon_name='AppIcon', entitlements='MacOS/BoraMin.entitlements', info='MacOS/Info.plist'),
 }
 # Preserve per-platform signing and version choices, including the first migration.
@@ -109,8 +109,14 @@ for platform, spec in platforms.items():
     obj(platform+':resources', 'PBXResourcesBuildPhase', buildActionMask=2147483647, files=resources, runOnlyForDeploymentPostprocessing=0)
     targets.append(obj(platform+':target', 'PBXNativeTarget', buildConfigurationList=ident(platform+':configs'), buildPhases=[ident(platform+':'+phase) for phase in ('sources', 'frameworks', 'resources', 'embed')], buildRules=[], dependencies=[media_dependency], name=name, productName='BoraMin', productReference=product, productType='com.apple.product-type.application', packageProductDependencies=[ident(platform+':smb'), ident(platform+':aether'), ident(platform+':ass')]))
     for config in ('Debug', 'Release'):
-        settings = dict(SDKROOT=spec['sdk'], SUPPORTED_PLATFORMS=spec['sdk'], PRODUCT_NAME='BoraMin', PRODUCT_MODULE_NAME='BoraMin_'+platform, PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID, DEVELOPMENT_TEAM='EXAMPLE000', CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS=spec['entitlements'], GENERATE_INFOPLIST_FILE='YES', INFOPLIST_FILE=spec['info'], MARKETING_VERSION='0.4', CURRENT_PROJECT_VERSION='4', ASSETCATALOG_COMPILER_APPICON_NAME=spec['icon_name'], SWIFT_OBJC_BRIDGING_HEADER='Player/Player-Bridging-Header.h', HEADER_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/include'], LIBRARY_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/lib'], OTHER_LDFLAGS=['-lavformat', '-lavcodec', '-lswresample', '-lavutil', '-framework', 'AudioToolbox', '-framework', 'CoreMedia', '-framework', 'VideoToolbox', '-lz', '-lbz2', '-liconv'])
+        settings = dict(SDKROOT=spec['sdk'], SUPPORTED_PLATFORMS=spec['sdk'], PRODUCT_NAME='BoraMin', PRODUCT_MODULE_NAME='BoraMin_'+platform, PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID, DEVELOPMENT_TEAM='EXAMPLE000', CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS=spec['entitlements'], GENERATE_INFOPLIST_FILE='YES', INFOPLIST_FILE=spec['info'], MARKETING_VERSION='0.5', CURRENT_PROJECT_VERSION='5', ASSETCATALOG_COMPILER_APPICON_NAME=spec['icon_name'], SWIFT_OBJC_BRIDGING_HEADER='Player/Player-Bridging-Header.h', HEADER_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/include'], LIBRARY_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/lib'], OTHER_LDFLAGS=['-lavformat', '-lavcodec', '-lswresample', '-lavutil', '-framework', 'AudioToolbox', '-framework', 'CoreMedia', '-framework', 'VideoToolbox', '-lz', '-lbz2', '-liconv'])
         settings[spec['deployment'][0]] = spec['deployment'][1]
+        if platform == 'tvos':
+            settings['SUPPORTED_PLATFORMS'] = 'appletvos appletvsimulator'
+            settings['HEADER_SEARCH_PATHS[sdk=appletvsimulator*]'] = ['$(SRCROOT)/vendor/ffmpeg-tvos-simulator/include']
+            settings['LIBRARY_SEARCH_PATHS[sdk=appletvsimulator*]'] = ['$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib']
+            settings['ARCHS[sdk=appletvsimulator*]'] = 'arm64'
+
         settings.update(previous.get((platform, config), {}))
         media_settings = dict(settings)
         media_settings.update(PRODUCT_NAME='BoraMinMedia', PRODUCT_MODULE_NAME='BoraMinMedia', PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID+'.media', DEFINES_MODULE='NO', SKIP_INSTALL='YES', EXPORTED_SYMBOLS_FILE='$(SRCROOT)/Config/MediaBridge.exports', INSTALL_PATH='$(LOCAL_LIBRARY_DIR)/Frameworks', DYLIB_INSTALL_NAME_BASE='@rpath')

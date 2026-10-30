@@ -118,7 +118,7 @@ import AMSMB2
                     print("SMB entry=\(name) regular=\(entry[.fileResourceTypeKey] as? URLFileResourceType == .regular) matching=\(ExternalSubtitles.matches(videoName: (path as NSString).lastPathComponent, subtitleName: name))")
                 }
             }
-            guard let discovered = await ExternalSubtitles.discover(client: client, path: path, playbackCancellation: CancellationFlag()), !discovered.tracks.isEmpty else { throw PlayerError("No matching SMB subtitle discovered") }
+            guard let discovered = await ExternalSubtitles.discover(session: RemoteSession(smb: client), path: path, playbackCancellation: CancellationFlag()), !discovered.tracks.isEmpty else { throw PlayerError("No matching SMB subtitle discovered") }
             let track = discovered.tracks[0]
             let bytes = try await track.load(CancellationFlag())
             let document = try await Task.detached { try ExternalSubtitleDecoder.decode(bytes, extension: track.ext, cancellation: CancellationFlag()) }.value
