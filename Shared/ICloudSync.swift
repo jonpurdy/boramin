@@ -39,6 +39,11 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
     @Published private(set) var syncing = false
     @Published private(set) var pendingCount = 0
     @Published private(set) var lastSync: Date?
+    var statusAndLastSync: String {
+        let message = status == "Up to date" ? "Up to Date." : status
+        guard let lastSync else { return message }
+        return "\(message) Last synced \(lastSync.formatted(date: .abbreviated, time: .shortened))"
+    }
     private let defaults = UserDefaults.standard
     private let container = CKContainer(identifier: "iCloud.com.example.BoraMin")
     private let zone = CKRecordZone.ID(zoneName: "BoraMinUserData-v1")
@@ -70,6 +75,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
                 state.pending.insert(key)
             }
         }
+        ConnectionPreferences.shared.reload()
         capture(initial: true)
         observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
                                                           object: defaults, queue: .main) { [weak self] _ in
@@ -114,24 +120,20 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
     }
     private func snapshots() -> [String: Snapshot] {
         var result: [String: Snapshot] = [:]
-        var profiles = defaults.dictionary(forKey: "serverProfiles.v1") as? [String: [String: String]] ?? [:]
-        let host = defaults.string(forKey: "server") ?? ""
-        if let url = Self.serverURL(host) {
-            let fields = ["server":url.absoluteString, "username":defaults.string(forKey:"username") ?? "",
-                          "domain":defaults.string(forKey:"domain") ?? "", "share":defaults.string(forKey:"share") ?? ""]
-            let key = ConnectionPreferences.profileID(server: url, username: fields["username"]!, domain: fields["domain"]!)
-            if profiles[key] == nil { profiles[key] = fields }
-            result[id("connection", "selected")] = Snapshot(kind: "connection", fields: fields)
-        }
+        // The chosen connection is device-local; each saved connection syncs independently.
+        let profiles = defaults.dictionary(forKey: "serverProfiles.v1") as? [String: [String: String]] ?? [:]
         for (key, var fields) in profiles {
+            fields["id"] = key
             let time = fields.removeValue(forKey: "updated").flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
             result[id("server", key)] = Snapshot(kind: "server", fields: fields, updated: time)
         }
         if let data = defaults.data(forKey: "favoriteLocations.v1"),
            let favorites = try? JSONDecoder().decode([FavoriteLocation].self, from: data) {
             for favorite in favorites {
-                result[id("favorite", favorite.id)] = Snapshot(kind: "favorite", fields:
-                    ["server":favorite.server,"share":favorite.share,"path":favorite.path])
+                var fields = ["server":favorite.server,"share":favorite.share,"path":favorite.path]
+                fields["connectionID"] = favorite.connectionID
+                fields["identity"] = favorite.identity
+                result[id("favorite", favorite.id)] = Snapshot(kind: "favorite", fields: fields)
             }
         }
         let bookmarks = defaults.dictionary(forKey:"playbackPositions.v1") as? [String:[String:Double]] ?? [:]
@@ -161,33 +163,32 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         }
         return result
     }
-    static func serverURL(_ address: String) -> URL? {
-        let raw = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty, var components = URLComponents(string: raw.contains("://") ? raw : "smb://\(raw)"),
-              components.scheme == "smb", let host = components.host, !host.isEmpty,
-              components.user == nil, components.password == nil,
-              components.path.isEmpty || components.path == "/" else { return nil }
-        components.host = host.lowercased()
-        if components.port == 445 { components.port = nil }
-        components.path = ""
-        return components.url
-    }
+    static func serverURL(_ address: String) -> URL? { ConnectionPreferences.serverURL(address) }
     private func newer(_ left: Value, than right: Value) -> Bool {
         left.updated == right.updated ? left.operation > right.operation : left.updated > right.updated
     }
-    private func capture(initial: Bool = false) {
-        guard !applying, !accountBlocked else { return }
+    nonisolated static func isConnectionMetadataUpgrade(_ snapshot: Snapshot, from cached: Value) -> Bool {
+        guard ["server", "favorite", "video"].contains(cached.kind), snapshot.kind == cached.kind,
+              snapshot.state == cached.state,
+              cached.fields.allSatisfy({ snapshot.fields[$0.key] == $0.value }) else { return false }
+        let added = Set(snapshot.fields.keys).subtracting(cached.fields.keys)
+        return !added.isEmpty && added.isSubset(of: ["id", "connectionID", "identity"])
+    }
+    private func capture(initial: Bool = false, allowingApply: Bool = false) {
+        guard (!applying || allowingApply), !accountBlocked else { return }
         let current = snapshots()
         var urgent = false
         var changed = false
         for (key, snapshot) in current where initial || snapshot != observed[key] {
+            var metadataUpgrade = false
             if let cached = state.items[key]?.value {
                 if cached.kind == snapshot.kind && cached.fields == snapshot.fields && cached.state == snapshot.state,
                    snapshot.updated == nil || snapshot.updated! <= cached.updated { continue }
-                if initial && (snapshot.updated ?? .distantPast) <= cached.updated { continue }
+                metadataUpgrade = Self.isConnectionMetadataUpgrade(snapshot, from: cached)
+                if initial && !metadataUpgrade && (snapshot.updated ?? .distantPast) <= cached.updated { continue }
             }
             let value = Value(id:key,kind:snapshot.kind,fields:snapshot.fields,state:snapshot.state,
-                              updated:snapshot.updated ?? (initial ? Date(timeIntervalSince1970:0) : Date()),operation:UUID().uuidString)
+                              updated:metadataUpgrade ? Date() : (snapshot.updated ?? (initial ? Date(timeIntervalSince1970:0) : Date())),operation:UUID().uuidString)
             state.items[key] = Item(value:value,systemFields:state.items[key]?.systemFields)
             state.pending.insert(key)
             urgent = urgent || snapshot.kind != "position" || snapshot.state == "reset"
@@ -283,6 +284,8 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
             applying=true
             defer { applying=false }
             for item in state.items.values { try apply(item.value) }
+            ConnectionPreferences.shared.reload()
+            capture(initial: true, allowingApply: true)
             observed=snapshots()
             applying=false
             enqueue(engine)
@@ -350,18 +353,25 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         switch value.kind {
         case "server":
             guard let address=f["server"], let server=Self.serverURL(address) else { return }
-            let key=ConnectionPreferences.profileID(server:server,username:f["username"] ?? "",domain:f["domain"] ?? "")
-            var profiles=defaults.dictionary(forKey:"serverProfiles.v1") as? [String:[String:String]] ?? [:]
-            if value.state == "deleted" { profiles.removeValue(forKey:key) }
-            else { var fields=f; fields["updated"]=String(value.updated.timeIntervalSince1970); profiles[key]=fields }
-            defaults.set(profiles,forKey:"serverProfiles.v1")
+            let key=f["id"] ?? ConnectionPreferences.profileID(server:server,username:f["username"] ?? "",domain:f["domain"] ?? "")
+            ConnectionPreferences.shared.applySyncedProfile(id: key, fields: f,
+                updated: value.updated.timeIntervalSince1970, deleted: value.state == "deleted")
         case "connection":
-            guard value.state != "deleted", let address=f["server"], Self.serverURL(address) != nil else { return }
-            for key in ["server","username","domain","share"] { defaults.set(f[key] ?? "",forKey:key) }
+            // Retain old selected-server records only as migration input. Never switch another device's browser.
+            guard value.state != "deleted", let address = f["server"], let server = Self.serverURL(address) else { return }
+            // Modern profiles (including deletion tombstones) supersede this legacy
+            // record. Otherwise deleting the last connection could recreate it on sync.
+            guard !state.items.values.contains(where: { $0.value.kind == "server" }) else { return }
+            let key = ConnectionPreferences.profileID(server: server, username: f["username"] ?? "", domain: f["domain"] ?? "")
+            var profiles = defaults.dictionary(forKey: "serverProfiles.v1") as? [String: [String: String]] ?? [:]
+            if profiles.isEmpty {
+                var fields = f; fields["id"] = key; fields["updated"] = String(value.updated.timeIntervalSince1970)
+                profiles[key] = fields; defaults.set(profiles, forKey: "serverProfiles.v1")
+            }
         case "favorite":
             guard let address=f["server"], let server=Self.serverURL(address),
                   let share=f["share"], let path=f["path"],
-                  let favorite=FavoriteLocation(server:server,share:share,path:path) else { return }
+                  let favorite=FavoriteLocation(server:server,share:share,path:path,connectionID:f["connectionID"],identity:f["identity"]) else { return }
             var favorites=defaults.data(forKey:"favoriteLocations.v1").flatMap { try? JSONDecoder().decode([FavoriteLocation].self,from:$0) } ?? []
             favorites.removeAll { $0.id == favorite.id }
             if value.state != "deleted" { favorites.append(favorite) }
@@ -438,6 +448,8 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
             case .sentDatabaseChanges(let event): if let failure=event.failedZoneSaves.first { lastFailure=failure.error }
             default: break
             }
+            ConnectionPreferences.shared.reload()
+            capture(initial: true, allowingApply: true)
             observed=snapshots()
             try persist()
             NotificationCenter.default.post(name:Self.dataChanged,object:nil)

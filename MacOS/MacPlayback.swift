@@ -157,6 +157,7 @@ final class MacPlayerView: AVPlayerView {
         installClock()
         observeItem(item)
         observePlayerStatus()
+        installPlaybackMenu()
         if UserDefaults.standard.bool(forKey: "showDebugInfo") { installDebug() }
         #if canImport(AetherEngine)
         if let backend = media.streaming?.aetherPlayback {
@@ -208,7 +209,12 @@ final class MacPlayerView: AVPlayerView {
         readiness = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             Task { @MainActor [weak self] in
                 guard let self, !self.stopped else { return }
-                if item.status == .failed { self.fail(item.error?.localizedDescription ?? "This video cannot be played."); return }
+                if item.status == .failed {
+                    let failure = item.error as NSError?
+                    let underlying = failure?.userInfo[NSUnderlyingErrorKey] as? NSError
+                    macPlaybackLog.error("Player item failed domain=\(failure?.domain ?? "unknown", privacy: .public) code=\(failure?.code ?? 0) underlyingDomain=\(underlying?.domain ?? "none", privacy: .public) underlyingCode=\(underlying?.code ?? 0)")
+                    self.fail(item.error?.localizedDescription ?? "This video cannot be played."); return
+                }
                 guard item.status == .readyToPlay, !self.began else { return }
                 self.began = true
                 self.startup = Task { @MainActor [weak self] in
@@ -309,11 +315,32 @@ final class MacPlayerView: AVPlayerView {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }
+    private func installPlaybackMenu() {
+        let menu = NSMenu(title: "Settings")
+        let debug = NSMenuItem(title: "Show Debug Info", action: #selector(toggleDebugInfo(_:)), keyEquivalent: "")
+        debug.target = self
+        debug.state = UserDefaults.standard.bool(forKey: "showDebugInfo") ? .on : .off
+        menu.addItem(debug)
+        playerView.actionPopUpButtonMenu = menu
+    }
+    @objc private func toggleDebugInfo(_ sender: NSMenuItem) {
+        guard !stopped else { return }
+        let enabled = !UserDefaults.standard.bool(forKey: "showDebugInfo")
+        UserDefaults.standard.set(enabled, forKey: "showDebugInfo")
+        sender.state = enabled ? .on : .off
+        if enabled {
+            installDebug()
+        } else {
+            timer?.invalidate(); timer = nil
+            debugLabel?.removeFromSuperview(); debugLabel = nil
+        }
+    }
     private func installDebug() {
-        guard let overlay = playerView.contentOverlayView else { return }
+        guard debugLabel == nil, let overlay = playerView.contentOverlayView else { return }
         let label = label(""); debugLabel = label; overlay.addSubview(label)
         NSLayoutConstraint.activate([label.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -20), label.centerYAnchor.constraint(equalTo: overlay.centerYAnchor), label.widthAnchor.constraint(lessThanOrEqualToConstant: 350)])
         lastBytes = media.streaming?.source.fetchedBytes ?? 0
+        lastSampleTime = ProcessInfo.processInfo.systemUptime
         updateDebug()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.updateDebug() } }
     }

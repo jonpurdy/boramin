@@ -66,7 +66,7 @@ private let externalSubtitleLog = Logger(subsystem: "com.example.BoraMin", categ
         do {
             let folder = (path as NSString).deletingLastPathComponent
             let name = (path as NSString).lastPathComponent
-            let entries = try await client.contentsOfDirectory(atPath: folder)
+            let entries = try await SMBBrowsingService.directoryAttributes(client, path: folder)
             guard !playbackCancellation.cancelled, !Task.isCancelled else { return nil }
             let tracks: [Track] = entries.compactMap { entry in
                 guard entry[.fileResourceTypeKey] as? URLFileResourceType == .regular,

@@ -33,6 +33,14 @@ private enum CallbackContext {
             cancelled.cancel()
             await cancelled.value
         }
+        let cached = ICloudSync.Value(id: "favorite", kind: "favorite", fields: ["server": "smb://example.invalid", "share": "Movies", "path": "Folder"], state: "active", updated: Date(), operation: "old")
+        var enriched = cached.fields; enriched["connectionID"] = "saved-id"; enriched["identity"] = "existing-favorite-id"
+        let snapshot = ICloudSync.Snapshot(kind: "favorite", fields: enriched)
+        precondition(ICloudSync.isConnectionMetadataUpgrade(snapshot, from: cached))
+        enriched["server"] = "smb://other.invalid"
+        precondition(!ICloudSync.isConnectionMetadataUpgrade(.init(kind: "favorite", fields: enriched), from: cached), "Migration must not overwrite newer cloud location fields")
+        precondition(!ICloudSync.isConnectionMetadataUpgrade(.init(kind: "favorite", fields: cached.fields), from: cached))
+        print("PASS: additive connection-ID migration syncs without overwriting cloud locations")
         print("PASS: sync tasks discard delegate task-local context, retain MainActor isolation and support cancellation")
     }
 }

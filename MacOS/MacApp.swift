@@ -13,7 +13,7 @@ import AppKit
         .defaultSize(width: 1100, height: 720)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Connect to Server…") { library.showConnection = true }.keyboardShortcut("k")
+                Button("Connections…") { library.showConnection = true }.keyboardShortcut("k")
             }
 
         }

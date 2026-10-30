@@ -52,4 +52,16 @@ References: [Apple logging](https://developer.apple.com/documentation/os/logging
 
 When Show Debug Info is enabled, the overlay samples app CPU and resident memory once per second. CPU 100% means one CPU core; multicore usage can exceed 100%. These are app-process measurements, not hardware-decoder utilization or all memory used by system media services. The first CPU sample is unavailable until an interval has elapsed.
 
-The sample-buffer renderer supplies dropped/total frame counts, which can reset on seek/flush. Native AVPlayer uses available access-log dropped-frame counts; total frames are unavailable. Missing statistics display Unavailable rather than zero. These counters measure reported drops, not every possible visible stutter.
+The sample-buffer renderer supplies dropped/total frame counts, which can reset on seek/flush. Native AVPlayer uses available access-log dropped-frame counts; total frames are unavailable. Missing frame counts display `?` rather than zero; unavailable CPU/memory samples retain their unavailable label. These counters measure reported drops, not every possible visible stutter.
+
+## Intermittent SMB opening errors
+
+Connection logs include the phase (`shares` or `directory`), attempt number, elapsed time, and error domain/code, without server addresses or credentials. Read-only connection opening retries once with a fresh manager for transient I/O/reset/timeout errors. Permission, authentication and missing-path failures are surfaced without automatic retry. A failed manager is closed before retrying. This is bounded recovery, not proof that the underlying server/library/network issue is resolved.
+
+October 27: the installed Mac app logged POSIX I/O error 5; a model stress run also encountered permission error 1. Twenty direct enumeration attempts passed, and the subsequent model run passed 40 opening/reconnection attempts without needing recovery. Live GUI failures still need correlation with the new attempt logs.
+
+## October 30 session findings
+
+- Show Debug Info can be toggled during native playback: tvOS transport Settings menu, Mac AVKit action menu, and an iOS Settings menu beside Audio & Subtitles. These use the existing saved preference and take effect immediately.
+- The Mac connection failure after updating was confirmed in system logs as `Local network prohibited`, while TCP port 445 was reachable on both servers. Restoring macOS Local Network permission resolved it; no SMB code change was needed.
+- Apple TV list-navigation/background-reopen exits remain unexplained. No useful termination stack was captured and no crash fix was applied. Prefer reproducing in a TestFlight-installed build and collecting its crash report. The directly installed developer build does not report through TestFlight. No persistent file logger or report-on-relaunch dialog was implemented.

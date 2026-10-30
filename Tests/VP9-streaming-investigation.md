@@ -1,5 +1,11 @@
 # iPhone VP9 streaming investigation — 2026-10-22
 
+## Apple TV lock-wait regression — 2026-10-29
+
+The later cancellation fix changed ordinary SMB cache-lock acquisition from `lock.lock()` to `try()` polling with a 10 ms sleep. Live Apple TV logs subsequently showed 24 dropped frames on a 25 fps clip and 191 on a 59.94 fps Rambalac clip; the latter's queued video timestamp fell about 0.8 seconds behind its clock. A memory warning was also recorded, but its causal role was not isolated.
+
+Restoring only the previous lock acquisition behavior and deploying to the same Apple TV resolved the user's stuttering completely in their retest. The VideoToolbox decoder/rendering implementation itself was unchanged. Keep blocking acquisition for ordinary reads; the existing optional per-read interrupt still uses polling. Other cancellation checks and task/late-result protections remain. Do not reintroduce polling on ordinary playback reads without a same-file device comparison. The separate cache/fetch-lock proposal below remains unimplemented.
+
 ## Findings
 
 Tested the original VP9 HDR fixture 4K/59.94 fps, Profile 2, 10-bit HDR MKV on test device. VideoToolbox confirmed hardware decoding. A separate 24-second local test using copied compressed packets played without late drops at diagnostic checkpoints, so disabling hardware decoding is not supported by the evidence.

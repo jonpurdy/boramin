@@ -5,8 +5,10 @@ struct FavoriteLocation: Codable, Identifiable, Hashable {
     let server: String
     let share: String
     let path: String
+    let connectionID: String?
+    let identity: String?
 
-    var id: String { [server, share.lowercased(), path].joined(separator: "\0") }
+    var id: String { identity ?? [connectionID ?? server, share.lowercased(), path].joined(separator: "\0") }
     var name: String { path.isEmpty ? share : (path as NSString).lastPathComponent }
     var location: String { "\(server)/\(share)\(path.isEmpty ? "" : "/\(path)")" }
 
@@ -15,7 +17,7 @@ struct FavoriteLocation: Codable, Identifiable, Hashable {
         return order == .orderedSame ? lhs.location < rhs.location : order == .orderedAscending
     }
 
-    init?(server: URL, share: String, path: String) {
+    init?(server: URL, share: String, path: String, connectionID: String? = nil, identity: String? = nil) {
         guard server.scheme == "smb", let host = server.host, !host.isEmpty, !share.isEmpty else { return nil }
         // Store locations only, never URL credentials or passwords.
         var components = URLComponents()
@@ -26,6 +28,7 @@ struct FavoriteLocation: Codable, Identifiable, Hashable {
         self.server = address
         self.share = share
         self.path = path
+        self.connectionID = connectionID; self.identity = identity
     }
 }
 
@@ -42,7 +45,7 @@ struct FavoriteLocation: Codable, Identifiable, Hashable {
     }
 
     func add(_ location: FavoriteLocation) {
-        guard !locations.contains(where: { $0.id == location.id }) else { return }
+        guard !contains(location) else { return }
         locations.append(location)
         sort()
         if let data = try? JSONEncoder().encode(locations) { defaults.set(data, forKey: storageKey) }
@@ -50,11 +53,17 @@ struct FavoriteLocation: Codable, Identifiable, Hashable {
 
     func remove(_ location: FavoriteLocation) {
         guard contains(location) else { return }
-        locations.removeAll { $0.id == location.id }
+        locations.removeAll { Self.sameLocation($0, location) }
         if let data = try? JSONEncoder().encode(locations) { defaults.set(data, forKey: storageKey) }
     }
 
-    func contains(_ location: FavoriteLocation) -> Bool { locations.contains { $0.id == location.id } }
+    func contains(_ location: FavoriteLocation) -> Bool { locations.contains { Self.sameLocation($0, location) } }
+    private static func sameLocation(_ left: FavoriteLocation, _ right: FavoriteLocation) -> Bool {
+        if left.id == right.id { return true }
+        guard left.share.caseInsensitiveCompare(right.share) == .orderedSame, left.path == right.path else { return false }
+        if let a = left.connectionID, let b = right.connectionID { return a == b }
+        return left.server == right.server
+    }
 
     func reload() {
         let saved=defaults.data(forKey:storageKey).flatMap { try? JSONDecoder().decode([FavoriteLocation].self,from:$0) } ?? []

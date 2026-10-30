@@ -8,6 +8,7 @@ Current integration guide for native and software AetherEngine sessions. See the
 - Non-VP9 WebM and the other recognized fallback containers use AetherEngine. MP4/M4V/MOV and VP9 retain their existing routes.
 - When the engine supplies an AVPlayer, attach that same player to AVPlayerViewController on iOS/tvOS or AVPlayerView on Mac. Do not create another player from its HLS URL.
 - Software sessions use the public AetherPlayerSurface with approved app-written SwiftUI controls: play/pause, skips, seeking, tracks, and close. Controls hide after five seconds of inactivity.
+- During preparation, AVFoundation's configuration rejection (-11829 with underlying CoreMedia -12848) retries once with AetherEngine's public `preferredDecodePath = .software`. This uses the existing surface and controls; it does not change the source file. Network failures do not trigger this retry. The route's name does not imply CPU video decoding: AetherEngine can still use VideoToolbox.
 - Audio & Subtitles uses the shared iOS sheet, Mac popover, or tvOS system menu. Source audio switching calls the engine's public API; replacement players/items require rebinding clock, completion, error, and track observers.
 - Prefer existing AAC/AC-3/E-AC-3/ALAC/MP3 source audio, respecting defaults among these. Other audio may require engine conversion. Showing multiple source tracks does not imply AVKit receives multiple native renditions.
 - External text subtitles and embedded ASS/SSA use libass. Other embedded subtitles retain native or existing overlay handling. See [styled ASS](Styled-ASS-subtitles.md) and [external subtitles](External-subtitles.md) for rendering, sizing, persistence, and limits.
@@ -39,6 +40,10 @@ Recognized containers do not guarantee codec/profile compatibility. Software con
 Native-to-software transitions are observed by the hosts, but recovery from a real failing native file has not been comprehensively device-tested. A failure that the engine cannot recover still reports an error. Long playback, memory/disk retention, blocked SMB cancellation, slow/interrupted networks, and exact HDR/A/V output need broader verification. Live streams, disc navigation, and arbitrary URLs are outside the SMB-file interface.
 
 ## Tests and recorded evidence
+
+October 27: HEVC/AAC fixture HEVC/AAC MKV still fails the native route on physical Apple TV (tvOS 27): HDR master rejection -11868/-17223, then media-playlist rejection -11829/-12848 after init/segment loading. Its AAC configuration matches the previously investigated Program Config Element audio in [the native audio report](../Tests/Native-audio-compatibility.md); audio configuration is a suspect, not a newly isolated cause. Forcing AetherEngine's alternate path produces continuously advancing rendered frames; logs select `HardwareVideoDecoder (VT HEVC)`, and the user confirms moving video and sound. iOS has the same user-reported opening failure; the shared fix builds for iOS, but device playback remains unverified. Logs are under ignored `build/PlaybackFailures/`.
+
+The same day's surround fixture MP4 failure on Mac is not reproduced with the installed 0.3 build: both the direct SMB resource-loader probe (including saved-position seeking) and the user's app retest play. An older 0.1 Debug copy was found running during diagnosis; this does not prove which build produced the original error. No MP4 playback change was needed.
 
 Use [Tests/README.md](../Tests/README.md) for current probe commands. `--aether-diagnostics` enables redacted engine diagnostics; use it with the existing stream and decoded-frame checks. An advancing audio clock alone is insufficient evidence of working video.
 

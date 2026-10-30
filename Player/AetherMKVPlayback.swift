@@ -83,7 +83,7 @@ final class AetherMKVPlayback {
     static func open(source: SMBRemoteFile, fileExtension: String) async throws -> AetherMKVPlayback {
         let formatHint: String? = fileExtension.lowercased() == "mkv" ? "matroska" : nil
         if CommandLine.arguments.contains("--aether-diagnostics") {
-            EngineLog.handler = { print($0) }
+            EngineLog.handler = { print($0); fflush(stdout) }
         }
         let engine = try AetherEngine()
         engine.logTag = "BoraMin-Aether"
@@ -94,40 +94,63 @@ final class AetherMKVPlayback {
         options.prepareNativeSubtitles = true
         options.forwardBufferSegments = 4
         options.sessionCacheByteBudget = 128 * 1024 * 1024
-        do {
-            let probe = try await Task.detached(priority: .userInitiated) {
-                let reader = AetherSMBReader(source: source)
-                defer { reader.close() }
-                return try AetherEngine.probe(source: .custom(reader, formatHint: formatHint))
-            }.value
-            try Task.checkCancellation()
-            let styled = fileExtension.lowercased() == "mkv" && probe.subtitleTracks.contains { StyledASSCoordinator.isASS($0.codec) }
-            options.preserveASSMarkup = styled
-            // ASS files use source-track selection + our overlay, avoiding a second plain-text rendition.
-            options.prepareNativeSubtitles = !styled
-            let supported = probe.audioTracks.filter { ["aac", "ac3", "eac3", "alac", "mp3"].contains($0.codec.lowercased()) }
-            let preferredAudio = (supported.first(where: { $0.isDefault }) ?? supported.first).map { Int32($0.id) }
-            if let preferredAudio { print("BORAMIN_AETHER preferred native audio stream=\(preferredAudio)") }
-            try await engine.load(source: .custom(AetherSMBReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
-            try Task.checkCancellation()
-            if let item = engine.currentAVPlayer?.currentItem, item.status == .failed {
-                throw item.error ?? PlayerError("The native player could not open this video.")
-            }
-            if case .error(let message) = engine.state { throw PlayerError(message) }
-            var info = MediaInfo()
-            info.width = probe.videoWidth; info.height = probe.videoHeight
-            info.duration = probe.durationSeconds; info.frame_rate = probe.videoFrameRate ?? 0
-            info.vp9 = probe.videoCodecName == "vp9" ? 1 : 0
-            switch probe.videoCodecName {
-            case "h264": info.codec_type = kCMVideoCodecType_H264
-            case "hevc": info.codec_type = kCMVideoCodecType_HEVC
-            case "av1": info.codec_type = kCMVideoCodecType_AV1
-            case "vp9": info.codec_type = kCMVideoCodecType_VP9
-            default: break
-            }
-            print("BORAMIN_AETHER loaded native=\(engine.currentAVPlayer != nil)")
-            return AetherMKVPlayback(engine: engine, info: info, enableStyledSubtitles: styled)
-        } catch { engine.stop(); throw error }
+        return try await withTaskCancellationHandler {
+            do {
+                let probe = try await Task.detached(priority: .userInitiated) {
+                    let reader = AetherSMBReader(source: source)
+                    defer { reader.close() }
+                    return try AetherEngine.probe(source: .custom(reader, formatHint: formatHint))
+                }.value
+                try Task.checkCancellation()
+                let styled = fileExtension.lowercased() == "mkv" && probe.subtitleTracks.contains { StyledASSCoordinator.isASS($0.codec) }
+                options.preserveASSMarkup = styled
+                // ASS files use source-track selection + our overlay, avoiding a second plain-text rendition.
+                options.prepareNativeSubtitles = !styled
+                let supported = probe.audioTracks.filter { ["aac", "ac3", "eac3", "alac", "mp3"].contains($0.codec.lowercased()) }
+                let preferredAudio = (supported.first(where: { $0.isDefault }) ?? supported.first).map { Int32($0.id) }
+                if let preferredAudio { print("BORAMIN_AETHER preferred native audio stream=\(preferredAudio)") }
+                do {
+                    try await engine.load(source: .custom(AetherSMBReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
+                    if let item = engine.currentAVPlayer?.currentItem, item.status == .failed {
+                        throw item.error ?? PlayerError("The native player could not open this video.")
+                    }
+                } catch {
+                    try Task.checkCancellation()
+                    let failure = error as NSError
+                    let underlying = failure.userInfo[NSUnderlyingErrorKey] as? NSError
+                    // AVFoundation can reject a valid source configuration that the engine's
+                    // alternate host supports (for example AAC with a Program Config Element).
+                    // Reopen through the engine's public API once; SMB/network failures retain
+                    // their original error and never trigger a decoder retry.
+                    guard failure.domain == AVFoundationErrorDomain, failure.code == -11829,
+                          underlying?.domain == "CoreMediaErrorDomain", underlying?.code == -12848 else { throw error }
+                    print("BORAMIN_AETHER native configuration rejected; retrying alternate playback path")
+                    options.preferredDecodePath = .software
+                    try await engine.load(source: .custom(AetherSMBReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
+                }
+                try Task.checkCancellation()
+                if let item = engine.currentAVPlayer?.currentItem, item.status == .failed {
+                    throw item.error ?? PlayerError("The native player could not open this video.")
+                }
+                if case .error(let message) = engine.state { throw PlayerError(message) }
+                var info = MediaInfo()
+                info.width = probe.videoWidth; info.height = probe.videoHeight
+                info.duration = probe.durationSeconds; info.frame_rate = probe.videoFrameRate ?? 0
+                info.vp9 = probe.videoCodecName == "vp9" ? 1 : 0
+                switch probe.videoCodecName {
+                case "h264": info.codec_type = kCMVideoCodecType_H264
+                case "hevc": info.codec_type = kCMVideoCodecType_HEVC
+                case "av1": info.codec_type = kCMVideoCodecType_AV1
+                case "vp9": info.codec_type = kCMVideoCodecType_VP9
+                default: break
+                }
+                print("BORAMIN_AETHER loaded native=\(engine.currentAVPlayer != nil)")
+                return AetherMKVPlayback(engine: engine, info: info, enableStyledSubtitles: styled)
+            } catch { engine.stop(); throw error }
+        } onCancel: {
+            source.cancellation.cancel()
+            Task { @MainActor in engine.stop() }
+        }
     }
     func selectSubtitle(index: Int) {
         if index < 0 { engine.clearSubtitle() }

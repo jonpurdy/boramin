@@ -145,6 +145,7 @@ struct PlaybackFile: Codable, Equatable {
     let size: Int64
     let username: String
     let domain: String
+    let connectionID: String?
     var name: String { (path as NSString).lastPathComponent }
     var folderLocation: String {
         let folder = (path as NSString).deletingLastPathComponent
@@ -152,9 +153,11 @@ struct PlaybackFile: Codable, Equatable {
     }
     var key: String { PlaybackPositions.key(server: URL(string: server)!, share: share, path: path, size: size) }
     var fields: [String: String] {
-        ["server": server, "share": share, "path": path, "size": String(size), "username": username, "domain": domain]
+        var result = ["server": server, "share": share, "path": path, "size": String(size), "username": username, "domain": domain]
+        result["connectionID"] = connectionID
+        return result
     }
-    init?(server: URL, share: String, path: String, size: Int64, username: String, domain: String) {
+    init?(server: URL, share: String, path: String, size: Int64, username: String, domain: String, connectionID: String? = nil) {
         guard server.scheme == "smb", let host = server.host, !host.isEmpty,
               !share.isEmpty, !path.isEmpty, size > 0 else { return nil }
         var clean = URLComponents()
@@ -162,13 +165,13 @@ struct PlaybackFile: Codable, Equatable {
         clean.port = server.port == 445 ? nil : server.port
         guard let address = clean.string else { return nil }
         self.server = address; self.share = share; self.path = path; self.size = size
-        self.username = username; self.domain = domain
+        self.username = username; self.domain = domain; self.connectionID = connectionID
     }
     init?(fields: [String: String]) {
         guard let server = fields["server"].flatMap(URL.init(string:)), let share = fields["share"],
               let path = fields["path"], let size = fields["size"].flatMap(Int64.init) else { return nil }
         self.init(server: server, share: share, path: path, size: size,
-                  username: fields["username"] ?? "", domain: fields["domain"] ?? "")
+                  username: fields["username"] ?? "", domain: fields["domain"] ?? "", connectionID: fields["connectionID"])
     }
 }
 

@@ -4,12 +4,14 @@ Run commands from the repository root with the configured Xcode toolchain. The p
 
 ## Fast host checks
 
-These suites need no device, SMB connection, or iCloud account. The connection suite uses disposable Keychain entries and requires host Keychain access; Swift macro compilation also requires a toolchain environment that permits compiler plugins. Run outside a restrictive agent sandbox when necessary:
+These suites need no device, SMB connection, or iCloud account. Connection tests cover multiple servers/accounts, stable edits, local selection, connection deletion (including synced deletion, shared credentials, selection repair and relaunch), and legacy favorite/Watching migration. The connection suite uses disposable Keychain entries and requires host Keychain access; Swift macro compilation also requires a toolchain environment that permits compiler plugins. Run outside a restrictive agent sandbox when necessary:
 
 ```sh
 set -e
 mkdir -p build/HostTests
 swiftc -module-cache-path build/HostTests/ModuleCache Player/PlaybackPositions.swift Tests/PlaybackPositionsTests.swift -o build/HostTests/positions
+swiftc -module-cache-path build/HostTests/ModuleCache Player/MediaMetadata.swift Tests/MediaMetadataTests.swift -o build/HostTests/metadata
+build/HostTests/metadata
 build/HostTests/positions
 swiftc -module-cache-path build/HostTests/ModuleCache Player/Favorites.swift Tests/FavoritesTests.swift -o build/HostTests/favorites
 build/HostTests/favorites
@@ -52,7 +54,7 @@ python3 tools/run_tests.py
 sh tools/test_macos_playback.sh
 ```
 
-`run_tests.py` runs the focused host suites, C demux/audio/range-IO/keyframe checks, compressed VP9 identity and PCM comparison, confirmed hardware VP9 decoding in WebM and MKV, and H.264/HEVC configuration/B-frame checks. It requires Homebrew FFmpeg and the adjacent `atv vp9-av1 testing` fixtures (`fixtures/middle.webm`, `fixtures/ready/sample.ivf`, and the VP9 HDR fixture MKV). Keychain and compiler plugins need normal host access.
+`run_tests.py` runs the focused host suites (including route prediction and local metadata cache invalidation/eviction), C demux/audio/range-IO/keyframe checks, compressed VP9 identity and PCM comparison, confirmed hardware VP9 decoding in WebM and MKV, and H.264/HEVC configuration/B-frame checks. It requires Homebrew FFmpeg and the adjacent `atv vp9-av1 testing` fixtures (`fixtures/middle.webm`, `fixtures/ready/sample.ivf`, and the VP9 HDR fixture MKV). Keychain and compiler plugins need normal host access.
 
 `test_macos_playback.sh` creates disposable native-track MP4 and H.264 MKV fixtures, then checks the actual Mac window adapter: rendered video, native MP4 audio/subtitle groups, seeks, pause/resume, consecutive windows, teardown, and completion dismissal. Its MKV fixture exercises the original demux/sample-buffer adapter directly, not automatic AetherEngine routing; use the engine probes for that coverage.
 
@@ -97,3 +99,19 @@ Production sync has separate `--icloud-sync-check` and `--icloud-preference-chec
 MKV routing is automatic (VP9 uses the original hardware path); `--aether-mkv` is obsolete. Use `--aether-diagnostics` with the stream/pixel/seek diagnostics. See [current integration and dated results](../docs/AetherEngine-playback.md).
 
 After an Xcode build, run `python3 tools/verify_media_linkage.py /absolute/path/to/BoraMin.app` to verify that the two FFmpeg builds remain isolated and the private framework uses a bundle-relative install name.
+
+## Connection opening regression
+
+`python3 tools/run_playback_probe.py browsing offline` runs the extracted SMB service's offline checks: mixed file/folder natural sorting, hidden-file filtering, metadata/path mapping, server validation, and cancellation before a metadata read. It needs no server, device, Keychain, or iCloud account.
+
+`python3 tools/run_playback_probe.py cancellation offline` checks explicit browser cancellation, cancellation before startup, stalled callback waiters, late results/errors, completion/cancellation races, and isolation from a newer operation. It also checks fresh SMB-session replacement, returning to the Connections list without a foreground reconnect, cancelled blocking reads/preparation, and normal loopback-listener startup. No server, device, or iCloud account is required; test preferences are disposable. Underlying SDK callbacks may finish later, but must never publish cancelled results or disturb a newer operation.
+
+`SMBDeletionProbe.swift` is an opt-in integration check for a disposable local Samba share only: `python3 tools/run_playback_probe.py deletion /absolute/path/to/disposable-share`. It expects `TESTMEDIA` at `127.0.0.1:1445` with test-only account `boramin-test` / `test-only`, backed by that directory. It creates uniquely named temporary files, verifies their removal on the backing filesystem, and checks that denied deletion keeps the row and reports an error. Never point this fixture at a media share. The investigation made no production deletion change.
+
+`python3 tools/run_playback_probe.py connections /absolute/path/to/local-preferences.plist` tests the production Browser model with an isolated preferences suite and existing local Keychain credentials. This is an opt-in, read-only live-server check requiring at least two saved connections with enumerable shares. It checks opening, switching, returning to Connections, and reconnecting when the awaiting screen task is cancelled. Never commit the preferences fixture or print its server/credential fields. It does not deploy an app or activate iCloud.
+
+Add `--browse` after the fixture path to also check root directory ordering/filtering, favorite identity and reopening, and parent navigation back to shares. Use this with connections that enumerate shares, without a pinned direct share. The checks only read remote files/directories.
+
+Add the pass-through argument with `python3 tools/run_playback_probe.py connections -- /absolute/path/to/local-preferences.plist --watching` to test an active Watching file: uncached route discovery over SMB and reuse of its isolated local metadata cache. The fixture must include that file’s saved metadata and playback position.
+
+Use `--stress` after the fixture path to repeat the connection cycle ten times (40 opening/reconnection attempts for two servers). `Tests/ConnectionRetryTests.swift`, included in `tools/run_tests.py`, checks one-shot transient recovery, the two-attempt cap, no authentication/path retries, and cancellation.

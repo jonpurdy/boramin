@@ -215,6 +215,23 @@ struct PlaybackTracksPanel: View {
     }
 }
 
+struct PlaybackMenuButtons: View {
+    @ObservedObject var tracks: PlaybackTracks
+    @AppStorage("showDebugInfo") private var showDebugInfo = false
+    var onDebugChanged: (Bool) -> Void
+    var body: some View {
+        HStack {
+            PlaybackTracksButton(tracks: tracks)
+            Menu {
+                Toggle("Show Debug Info", isOn: $showDebugInfo)
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+        }
+        .onChange(of: showDebugInfo) { _, enabled in onDebugChanged(enabled) }
+    }
+}
+
 struct PlaybackTracksButton: View {
     @ObservedObject var tracks: PlaybackTracks
     @State private var presented = false

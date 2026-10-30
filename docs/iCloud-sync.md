@@ -6,6 +6,16 @@ The remaining document preserves the original design proposal and cross-platform
 
 The apps use one CloudKit container, `iCloud.com.example.BoraMin`, across tvOS, iOS/iPadOS, and macOS. Store each user's records in their private database and a custom record zone. Keep local persistence so browsing, playback, and password retrieval work without an internet connection. Use CKSyncEngine to synchronize the local changes and apply remote changes. No BoraMin account or custom server is needed.
 
+## Multiple connections (October 26, 2026)
+
+The current UI stores multiple named connections, with server address, account, domain, optional share, and Keychain password. The main-screen Connections list opens saved servers, provides Edit Connection in the context menu, and adds connections with an empty form. Connections is no longer duplicated in Settings. Saving does not connect; SMB sessions open on demand and previous sessions close when switching within a browser. There is no polling of every saved server. A failed server/share remains saved and can be retried or edited independently.
+
+`serverProfiles.v1` retains existing profile keys as stable IDs; new UI connections use UUIDs. Server records carry the ID and name inside the existing encrypted payload, so no schema deployment is required. Passwords retain the existing server/port/account/domain Keychain identity and encrypted CloudKit password field. The selected connection is device-local; legacy `connection` cloud records are migration input only.
+
+Favorites and Watching metadata carry an optional connection ID. Migration attaches IDs only when the account/location can be resolved without guessing; it preserves old favorite identities, bookmark keys, playback timestamps, and subtitle choices. Additive ID enrichment is queued to iCloud even for cached records. Editing a connection keeps its ID, allowing existing references to resolve the new address/account. Ambiguous legacy favorites report an error rather than borrowing an unrelated account. Re-favorite the path from the intended connection to disambiguate it.
+
+Local tests cover account isolation, stable edits, migration, cloud field application and additive sync metadata. All-device live multi-connection iCloud delivery and GUI flows still require user testing.
+
 ## Why CloudKit
 
 CloudKit supports all target platforms. NSUbiquitousKeyValueStore is useful for small preferences, but has a 1 MB total/1024-key limit and is designed for infrequent changes. A media history with independent edits, resets, deletes, and frequent checkpoints benefits from separate CloudKit records. Avoid storing an entire collection as a single JSON cloud value: concurrent devices can overwrite unrelated changes.

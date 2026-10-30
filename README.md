@@ -12,15 +12,16 @@ All three targets live in **BoraMin.xcodeproj** and use `com.example.BoraMin`. B
 
 ## Features
 
-- **Files:** browse SMB shares and folders, with automatic connection/reconnection to the saved server. Files and folders sort alphabetically together; dotfiles are hidden.
+- **Connections:** choose a saved connection, then browse its SMB shares and folders. Connections open on demand and reconnect for browsing when needed. Files and folders sort alphabetically together; dotfiles are hidden.
+- **Playback labels:** file details show the expected route before duration/size: AVP (AVPlayer), AEP (AetherEngine), or HW9 (original hardware VP9). Visible files are probed in the background, with a bounded local-only metadata cache; Watching also probes visible uncached entries and reuses local results. A label is a route prediction, not a compatibility or decoder-status guarantee.
 - **Favorites:** save folder/share paths using the context menu. Favorites sort alphabetically and keep their navigation separate from Files.
 - **Watching:** unfinished videos, ordered by last save time. Filenames show progress such as `(80%, 00:12:45)`. Reopening resumes playback; completion returns to the previous screen. **Reset Playback** clears progress and the saved subtitle choice.
 - **Audio & Subtitles:** select audio, embedded subtitles, external subtitles, or Off. Uses a sheet on iOS, a popover on Mac, and a system menu above the tvOS scrubber.
 - **External subtitles:** load matching `.srt`, `.vtt`, `.ass`, or `.ssa` files from the video's folder. For example, `Movie.mp4` matches `Movie.ass`. ASS/SSA styling is rendered with libass.
-- **Settings:** connection setup, iCloud sync, Display all files, Subtitle Size, and Show Debug Info. Subtitle Size offers 100%, 125%, 150%, and 200%, initially 125%, and is saved per device.
+- **Settings:** iCloud sync, Display all files, Subtitle Size, and Show Debug Info. Subtitle Size offers 100%, 125%, 150%, and 200%, initially 125%, and is saved per device.
 - **File deletion:** delete individual files through the context menu with confirmation. Folders cannot be deleted.
 
-On first use, enter the server address and credentials under **Connection Setup**. Leave Share empty to browse available shares. Passwords are stored in Keychain; server addresses and credentials are never bundled with the app.
+Manage servers from **Connections** on the main screen. Opening Connections on iOS/tvOS always shows the saved list first, including after browsing a server or a failed attempt. Open an entry to browse it; use its context menu to edit it or choose **Delete Connection…**, or **Add connection…** for an empty form. Deleting asks for confirmation and syncs when iCloud is enabled; server files, favorites and playback history are kept. Give it an optional name and enter its server address and credentials. Leave Share empty to browse available shares. Saving works offline; Connections opens the server only when you choose an entry. An unavailable server has Retry/Edit actions and does not remove favorites or prevent choosing another connection. Passwords are stored in Keychain; server addresses and credentials are never bundled with the app.
 
 ## Playback
 
@@ -44,7 +45,7 @@ Codec/profile support depends on the engine, OS, and device. A recognized extens
 
 ## iCloud
 
-**Sync via iCloud** synchronizes connection profiles, encrypted passwords, favorites, playback positions and subtitle choices, Watching metadata, and supported preferences through the user's private database. Settings provides sync status and **Sync Now**. Offline changes are queued; delivery is asynchronous. Subtitle Size and navigation state remain local.
+**Sync via iCloud** synchronizes connection profiles, encrypted passwords, favorites, playback positions and subtitle choices, Watching metadata, and supported preferences through the user's private database. Settings provides sync status and **Sync Now**. Offline changes are queued; delivery is asynchronous. Subtitle Size, navigation state, and the active connection remain local. Existing server details, favorites and Watching metadata migrate to saved connection IDs without resetting progress.
 
 Xcode development builds use CloudKit **Development**; TestFlight/App Store builds use **Production**. Those cloud datasets are separate, and switching builds does not migrate them or isolate existing local sync metadata. See [iCloud design and caveats](docs/iCloud-sync.md).
 
@@ -69,12 +70,9 @@ For beta archives, uploads, iCloud distribution setup, and release status, follo
 
 ## Development notes
 
+- [Agent guidance and project boundaries](AGENTS.md)
 - [Feature and bug-fix history](docs/Feature-history.md)
 - [Playback logs and crash reports](docs/Diagnostics.md)
 - [Subtitle regression fixtures and checks](docs/External-subtitles.md#local-regression-probe)
 - [Device probes and investigations](Tests/README.md)
 - [Streaming remux research and limits](Tests/Streaming-remux-investigation.md)
-
-`Player/` contains shared browsing/playback code and iOS/tvOS views; `Shared/` contains iCloud sync; `iOS/` and `MacOS/` contain platform interfaces/configuration. `tools/`, `Tests/`, and `docs/` hold build helpers, probes, and investigation records.
-
-`build/` and local `default_*.txt` files are ignored. Default files are not read by the apps or project generator. Preserve release archives and dSYMs needed for uploads and crash symbolication before cleaning generated products.

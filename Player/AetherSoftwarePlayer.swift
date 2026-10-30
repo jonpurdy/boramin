@@ -96,7 +96,7 @@ private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "So
     @AppStorage("showDebugInfo") private var showDebug = false
     @Environment(\.scenePhase) private var scenePhase
     #if os(tvOS)
-    private enum PlaybackFocus: Hashable { case surface, playPause }
+    private enum PlaybackFocus: Hashable { case surface, timeline }
     @FocusState private var playbackFocus: PlaybackFocus?
     #endif
     @State private var controlsVisible = true
@@ -191,9 +191,9 @@ private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "So
         }
         .onDisappear { tracks.stop(); model.stop() }
         #if os(tvOS)
-        .onAppear { playbackFocus = .playPause }
+        .onAppear { playbackFocus = .timeline }
         .onChange(of: controlsVisible) { _, visible in
-            playbackFocus = visible ? .playPause : .surface
+            playbackFocus = visible ? .timeline : .surface
         }
         .onPlayPauseCommand { engine.togglePlayPause(); activity() }
         .onExitCommand {
@@ -208,6 +208,7 @@ private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "So
                 #if os(tvOS)
                 ProgressView(value: min(model.position, model.duration), total: max(1, model.duration))
                     .focusable()
+                    .focused($playbackFocus, equals: .timeline)
                     .accessibilityLabel("Playback position")
                     .accessibilityHint("Press left or right to seek ten seconds")
                     .onMoveCommand { direction in
@@ -224,14 +225,13 @@ private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "So
                 #endif
                 Text(timecode(model.duration))
             }.monospacedDigit().font(.caption)
+            #if !os(tvOS)
             HStack(spacing: 35) {
                 Button("Back 10 seconds", systemImage: "gobackward.10") { model.seek(to: model.position - 10); activity() }
                 Button(engine.state == .playing ? "Pause" : "Play", systemImage: engine.state == .playing ? "pause.fill" : "play.fill") { engine.togglePlayPause(); activity() }
-                    #if os(tvOS)
-                    .focused($playbackFocus, equals: .playPause)
-                    #endif
                 Button("Forward 10 seconds", systemImage: "goforward.10") { model.seek(to: model.position + 10); activity() }
             }.labelStyle(.iconOnly).font(.title2)
+            #endif
         }
     }
     private func activity() { lastInteraction = Date(); controlsVisible = true }

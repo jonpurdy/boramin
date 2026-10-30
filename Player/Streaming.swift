@@ -62,6 +62,8 @@ final class SMBRemoteFile: @unchecked Sendable {
         guard !cancellation.cancelled else { throw CancellationError() }
         guard offset >= 0, count > 0 else { throw PlayerError("Invalid SMB byte range.") }
         guard offset < size else { return Data() }
+        // Normal playback needs immediate lock handoff. Polling every 10 ms here
+        // caused VP9 stutters on Apple TV; reserve polling for explicit per-read interruption.
         if let interrupt {
             while !lock.try() {
                 if cancellation.cancelled || interrupt.cancelled { throw CancellationError() }
@@ -84,7 +86,7 @@ final class SMBRemoteFile: @unchecked Sendable {
             let end = min(size, start + blockSize)
             let semaphore = DispatchSemaphore(value: 0)
             let result = SMBReadResult()
-            client.contents(atPath: path, range: start..<end, progress: { [cancellation] _, _ in !cancellation.cancelled }) { value in
+            client.contents(atPath: path, range: start..<end, progress: { [cancellation] _, _ in !cancellation.cancelled && interrupt?.cancelled != true }) { value in
                 result.value = value; semaphore.signal()
             }
             // The SMB client has a connection timeout; leave its callback's captured state alive
@@ -92,6 +94,7 @@ final class SMBRemoteFile: @unchecked Sendable {
             while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
                 if cancellation.cancelled || interrupt?.cancelled == true { throw CancellationError() }
             }
+            if cancellation.cancelled || interrupt?.cancelled == true { throw CancellationError() }
             do { data = try result.value!.get() }
             catch {
                 let failure = error as NSError
@@ -115,6 +118,7 @@ final class SMBRemoteFile: @unchecked Sendable {
                 metricsLock.lock(); residentBytes -= Int64(removed.count); metricsLock.unlock()
             }
         }
+        if cancellation.cancelled || interrupt?.cancelled == true { throw CancellationError() }
         let local = Int(offset - start)
         return data.subdata(in: local..<min(data.count, local + count))
     }
@@ -321,24 +325,29 @@ final class StreamingSession: @unchecked Sendable {
         }
     }
     func start() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
-                ready = continuation
-                listener.stateUpdateHandler = { [weak self] state in
-                    guard let self else { return }
-                    switch state {
-                    case .ready:
-                        self.port = self.listener.port!.rawValue
-                        self.ready?.resume(); self.ready = nil
-                    case .failed(let error): self.ready?.resume(throwing: error); self.ready = nil
-                    case .cancelled: self.ready?.resume(throwing: CancellationError()); self.ready = nil
-                    default: break
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                queue.async { [self] in
+                    if source.cancellation.cancelled { continuation.resume(throwing: CancellationError()); return }
+                    ready = continuation
+                    listener.stateUpdateHandler = { [weak self] state in
+                        guard let self else { return }
+                        switch state {
+                        case .ready:
+                            self.port = self.listener.port!.rawValue
+                            self.ready?.resume(); self.ready = nil
+                        case .failed(let error): self.ready?.resume(throwing: error); self.ready = nil
+                        case .cancelled: self.ready?.resume(throwing: CancellationError()); self.ready = nil
+                        default: break
+                        }
                     }
+                    listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
+                    listener.start(queue: queue)
                 }
-                listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
-                listener.start(queue: queue)
             }
-        }
+            try Task.checkCancellation()
+        } onCancel: { self.stop() }
     }
     func stop() {
         stopLock.lock()

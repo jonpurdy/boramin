@@ -2,15 +2,15 @@ import SwiftUI
 import AppKit
 
 private enum LibrarySection: String, CaseIterable, Identifiable {
-    case files = "Files", favorites = "Favorites", watching = "Watching"
+    case favorites = "Favorites", watching = "Watching", files = "Connections"
     var id: Self { self }
-    var symbol: String { switch self { case .files: "folder"; case .favorites: "star"; case .watching: "play.rectangle" } }
+    var symbol: String { switch self { case .files: "network"; case .favorites: "star"; case .watching: "play.rectangle" } }
 }
 
 struct MacLibraryView: View {
     @ObservedObject var library: MacLibrary
     @StateObject private var favorites = Favorites()
-    @State private var section: LibrarySection? = .files
+    @State private var section: LibrarySection? = .favorites
     @State private var favoriteOpen = false
     @State private var favoriteRoot = ""
     @State private var favoriteSelection = Set<String>()
@@ -33,9 +33,9 @@ struct MacLibraryView: View {
             }
         } detail: {
             Group {
-                switch section ?? .files {
+                switch section ?? .favorites {
                 case .files:
-                    MacFilesView(browser: library.files, favorites: favorites, search: search, rootBack: nil, showConnection: { library.showConnection = true })
+                    MacFilesRoot(browser: library.files, favorites: favorites, search: search, showConnection: { library.showConnection = true })
                 case .favorites:
                     if favoriteOpen {
                         MacFilesView(browser: library.favoritesBrowser, favorites: favorites, search: search,
@@ -45,10 +45,10 @@ struct MacLibraryView: View {
                 case .watching: watchingTable
                 }
             }
-            .searchable(text: $search, prompt: "Filter \((section ?? .files).rawValue)")
+            .searchable(text: $search, prompt: "Filter \((section ?? .favorites).rawValue)")
 
         }
-        .sheet(isPresented: $library.showConnection) { MacConnectionView(browser: library.files) }
+        .sheet(isPresented: $library.showConnection) { ConnectionsPanel() }
         .background {
             PlaybackPresenter(browser: library.files)
             PlaybackPresenter(browser: library.favoritesBrowser)
@@ -64,11 +64,12 @@ struct MacLibraryView: View {
             Task { await library.files.automaticallyConnect() }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BoraMinPlaybackSync"))) { _ in refreshSavedLists() }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: UserDefaults.standard)) { _ in refreshSavedLists() }
     }
     private var favoriteTable: some View {
         Table(favorites.locations.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }, selection: $favoriteSelection) {
             TableColumn("Name") { item in Label(item.name, systemImage: "folder") }
-            TableColumn("Location", value: \.location)
+            TableColumn("Location") { item in Text(item.currentLocation) }
         }
         .contextMenu(forSelectionType: String.self) { ids in
             if let item = favorites.locations.first(where: { ids.contains($0.id) }) {
@@ -78,15 +79,15 @@ struct MacLibraryView: View {
         } primaryAction: { ids in
             if let item = favorites.locations.first(where: { ids.contains($0.id) }) { openFavorite(item) }
         }
-        .overlay { if favorites.locations.isEmpty { ContentUnavailableView("No Favorites", systemImage: "star", description: Text("Control-click a folder or share in Files and choose Favorite.")) } }
+        .overlay { if favorites.locations.isEmpty { ContentUnavailableView("No Favorites", systemImage: "star", description: Text("Control-click a folder or share in Connections and choose Favorite.")) } }
         .navigationTitle("Favorites")
     }
     private var watchingTable: some View {
         Table(watching.filter { search.isEmpty || ($0.file?.name ?? "").localizedCaseInsensitiveContains(search) }, selection: $watchingSelection) {
             TableColumn("Name") { item in Text(item.file.map { "\(item.progress.prefix) \($0.name)" } ?? "\(item.progress.prefix) Unavailable video") }
             TableColumn("Length / Size") { item in
-                if let file = item.file { Text(BrowserEntry(name: file.name, path: file.path, directory: false, size: file.size, duration: item.progress.duration).sizeAndDuration).foregroundStyle(.secondary) }
-            }.width(190)
+                if let file = item.file { WatchingPlaybackDetails(file: file, duration: item.progress.duration, browser: library.watchingBrowser).foregroundStyle(.secondary) }
+            }.width(270)
             TableColumn("Last Saved") { item in Text(Date(timeIntervalSince1970: item.lastSaved), style: .relative) }.width(130)
         }
         .contextMenu(forSelectionType: String.self) { ids in
@@ -113,10 +114,23 @@ struct MacLibraryView: View {
     }
     private func openFavorite(_ item: FavoriteLocation) {
         let browser = library.favoritesBrowser
-        browser.useCredentials(from: library.files)
         browser.openFavorite(item) { favoriteRoot = item.path; favoriteOpen = true }
     }
     private func refreshSavedLists() { favorites.reload(); watching = PlaybackPositions.shared.watching(); library.files.refreshProgress(); library.favoritesBrowser.refreshProgress() }
+}
+
+private struct MacFilesRoot: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var favorites: Favorites
+    let search: String
+    let showConnection: () -> Void
+    var body: some View {
+        if browser.showingConnections {
+            ConnectionsList(onOpen: { browser.openConnection($0) })
+        } else {
+            MacFilesView(browser: browser, favorites: favorites, search: search, rootBack: nil, showConnection: showConnection)
+        }
+    }
 }
 
 private struct MacFileRow: Identifiable {
@@ -154,7 +168,7 @@ private struct MacFilesView: View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Name", value: \.name) { row in Label(row.displayName, systemImage: row.directory ? "folder" : "film").lineLimit(1) }.width(min: 250, ideal: 440)
             TableColumn("Kind") { row in Text(row.entry == nil ? "SMB Share" : row.kind).foregroundStyle(.secondary) }.width(100)
-            TableColumn("Size") { row in Text(row.directory ? "—" : (row.entry?.sizeAndDuration ?? ByteCountFormatter.string(fromByteCount: row.size, countStyle: .file))).foregroundStyle(.secondary).task(id: row.id) { if let entry = row.entry { await browser.loadDuration(entry) } } }.width(190)
+            TableColumn("Size") { row in Text(row.directory ? "—" : (row.entry?.playbackDetails ?? ByteCountFormatter.string(fromByteCount: row.size, countStyle: .file))).foregroundStyle(.secondary).task(id: row.entry.map { browser.metadataTaskID($0) } ?? row.id) { if let entry = row.entry { await browser.loadMetadata(entry) } } }.width(270)
         }
         .contextMenu(forSelectionType: String.self) { ids in
             if let row = rows.first(where: { ids.contains($0.id) }) {
@@ -173,15 +187,15 @@ private struct MacFilesView: View {
             Button("Delete", role: .destructive) { browser.deleteFile(entry); fileToDelete = nil; selection.remove(entry.id) }
             Button("Cancel", role: .cancel) { fileToDelete = nil }
         } message: { entry in Text("Permanently delete \(entry.name) from the server? This cannot be undone.") }
-        .navigationTitle(browser.share.isEmpty ? "Files" : (browser.path.isEmpty ? browser.share : (browser.path as NSString).lastPathComponent))
+        .navigationTitle(browser.share.isEmpty ? "Connections" : (browser.path.isEmpty ? browser.share : (browser.path as NSString).lastPathComponent))
         .navigationSubtitle(browser.share.isEmpty ? "SMB Shares" : "\(browser.share)/\(browser.path)")
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button { if let rootBack, browser.path == rootPath { rootBack() } else { browser.back() } } label: { Label("Enclosing Folder", systemImage: "chevron.left") }
-                    .keyboardShortcut(.upArrow, modifiers: .command).disabled(browser.busy || (rootBack == nil && browser.share.isEmpty))
+                    .keyboardShortcut(.upArrow, modifiers: .command).disabled(browser.busy || (rootBack == nil && browser.showingConnections))
                 Button { browser.refreshConnection() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.keyboardShortcut("r").disabled(browser.busy || !browser.connected)
             }
-            ToolbarItem { Button(action: showConnection) { Label("Connection Setup", systemImage: "network") }.help("Connection Setup") }
+            ToolbarItem { Button(action: showConnection) { Label("Connections", systemImage: "network") }.help("Connections") }
         }
         .safeAreaInset(edge: .bottom) {
             HStack {
@@ -192,17 +206,11 @@ private struct MacFilesView: View {
         .overlay {
             if !browser.busy, !browser.connected {
                 ContentUnavailableView { Label("Connect to Your Media", systemImage: "externaldrive.connected.to.line.below") }
-                    description: { Text(browser.connectionError ?? "Add an SMB server to browse and play your videos.") }
-                    actions: { Button("Connection Setup…", action: showConnection); if browser.hasSavedConnection { Button("Retry") { Task { await browser.automaticallyConnect() } } } }
+                    description: { Text(browser.connectionError ?? "Choose a saved connection to browse your videos.") }
+                    actions: { Button("Connections") { browser.showConnections() }; if let id = browser.connectionID, let saved = ConnectionPreferences.shared.connection(id: id) { ConnectionEditButton(connection: saved) }; if browser.hasSavedConnection { Button("Retry") { Task { await browser.automaticallyConnect() } } } }
             } else if !browser.busy, rows.isEmpty { ContentUnavailableView.search(text: search) }
         }
-        .task {
-            await browser.automaticallyConnect(usingSavedConnection: rootBack == nil)
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(15)) } catch { break }
-                if NSApp.isActive { await browser.automaticallyConnect(usingSavedConnection: rootBack == nil) }
-            }
-        }
+        .task { await browser.automaticallyConnect() }
         .onChange(of: browser.path) { _, _ in selection.removeAll() }
         .onChange(of: browser.share) { _, _ in selection.removeAll() }
         .alert("Unable to Complete Action", isPresented: Binding(get: { browser.error != nil }, set: { if !$0 { browser.error = nil } })) {

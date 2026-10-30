@@ -52,7 +52,7 @@ struct PlayerError: LocalizedError {
 @MainActor final class PlaybackDebugStats {
     private var previousCPU: Double?
     private var previousTime: Double?
-    private var frames = "Frames (dropped/total): Unavailable"
+    private var frames = "Frames (dropped/total): ?"
     private var loading = false
     func lines(item: AVPlayerItem?, video: HardwareVideo?) -> [String] {
         let now = ProcessInfo.processInfo.systemUptime
@@ -66,15 +66,15 @@ struct PlayerError: LocalizedError {
             if !loading {
                 loading = true
                 video.layer.sampleBufferRenderer.loadVideoPerformanceMetrics { [weak self] metrics in
-                    let text = metrics.map { "Frames (dropped/total): \($0.numberOfDroppedFrames)/\($0.totalNumberOfFrames)" } ?? "Frames (dropped/total): Unavailable"
+                    let text = metrics.map { "Frames (dropped/total): \($0.numberOfDroppedFrames)/\($0.totalNumberOfFrames)" } ?? "Frames (dropped/total): ?"
                     Task { @MainActor [weak self] in self?.frames = text; self?.loading = false }
                 }
             }
         } else {
             let events = item?.accessLog()?.events ?? []
             let values = events.map(\.numberOfDroppedVideoFrames)
-            let dropped = !values.isEmpty && values.allSatisfy { $0 >= 0 } ? String(values.reduce(0, +)) : "Unavailable"
-            frames = "Frames (dropped/total): \(dropped)/Unavailable"
+            let dropped = !values.isEmpty && values.allSatisfy { $0 >= 0 } ? String(values.reduce(0, +)) : "?"
+            frames = "Frames (dropped/total): \(dropped)/?"
         }
         let bytes = media_process_resident_bytes()
         return [frames, cpuText, bytes > 0 ? String(format: "Memory (app): %.1f MiB", Double(bytes) / 1048576) : "Memory (app): Unavailable"]
@@ -732,7 +732,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     private var diagnosticsObservers: [NSObjectProtocol] = []
     #if canImport(SwiftAssRenderer)
     private var subtitleHost: UIHostingController<PlaybackSubtitleOverlay>?
-    private var tracksHost: UIHostingController<PlaybackTracksButton>?
+    private var tracksHost: UIHostingController<PlaybackMenuButtons>?
     private var tracks: PlaybackTracks?
     #endif
     #if os(tvOS)
@@ -1045,8 +1045,17 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         NotificationCenter.default.post(name:Notification.Name("BoraMinPlaybackSync"),object:nil)
         super.viewWillDisappear(animated)
     }
+    private func setDebugInfoVisible(_ enabled: Bool) {
+        guard active else { return }
+        if enabled {
+            installDebugInfo()
+        } else {
+            debugTimer?.invalidate(); debugTimer = nil
+            debugPanel?.removeFromSuperview(); debugPanel = nil; debugLabel = nil
+        }
+    }
     private func installDebugInfo() {
-        guard UserDefaults.standard.bool(forKey: "showDebugInfo"), let overlay = contentOverlayView else { return }
+        guard debugPanel == nil, UserDefaults.standard.bool(forKey: "showDebugInfo"), let overlay = contentOverlayView else { return }
         let panel = UIView()
         panel.backgroundColor = UIColor.black.withAlphaComponent(0.65)
         panel.isUserInteractionEnabled = false
@@ -1117,10 +1126,20 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     }
     #if os(tvOS)
     private func refreshTransportMenu() {
-        guard active, let tracks else { return }
-        let menu = tracks.menu()
-        transportBarCustomMenuItems = [menu]
-        playbackLog.notice("Track menu installed actions=\(menu.children.count) externalSubtitles=\(tracks.subtitles.tracks.count)")
+        guard active else { return }
+        var menus: [UIMenuElement] = []
+        if let tracks { menus.append(tracks.menu()) }
+        let debug = UIAction(title: "Show Debug Info", identifier: UIAction.Identifier("boramin.debug"),
+                             state: UserDefaults.standard.bool(forKey: "showDebugInfo") ? .on : .off) { [weak self] _ in
+            guard let self, self.active else { return }
+            let enabled = !UserDefaults.standard.bool(forKey: "showDebugInfo")
+            UserDefaults.standard.set(enabled, forKey: "showDebugInfo")
+            self.setDebugInfoVisible(enabled)
+            self.refreshTransportMenu()
+        }
+        menus.append(UIMenu(title: "Settings", image: UIImage(systemName: "gearshape"),
+                            identifier: UIMenu.Identifier("boramin.settings"), children: [debug]))
+        transportBarCustomMenuItems = menus
     }
     #endif
     #if canImport(AetherEngine)
@@ -1199,7 +1218,9 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         }
         #if os(iOS)
         if let tracks {
-            let host = UIHostingController(rootView: PlaybackTracksButton(tracks: tracks))
+            let host = UIHostingController(rootView: PlaybackMenuButtons(tracks: tracks, onDebugChanged: { [weak self] enabled in
+                self?.setDebugInfoVisible(enabled)
+            }))
             host.view.backgroundColor = .clear; host.view.translatesAutoresizingMaskIntoConstraints = false
             host.sizingOptions = .intrinsicContentSize
             addChild(host); overlay.addSubview(host.view); host.didMove(toParent: self)

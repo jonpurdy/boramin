@@ -44,6 +44,16 @@ import Foundation
         precondition(reopened.locations == [alpha, two, ten, zulu])
         precondition(Favorites(defaults: defaults).locations == [alpha, two, ten, zulu])
         precondition(FavoriteLocation(server: URL(string: "https://nas.local")!, share: "Movies", path: "") == nil)
-        print("PASS: favorites persist, remove and reload, sort incoming records alphabetically with natural numbers, deduplicate normalized locations, distinguish servers and omit credentials")
+        let connectionA = FavoriteLocation(server: URL(string: "smb://nas.local")!, share: "Media", path: "shared", connectionID: "a")!
+        let connectionB = FavoriteLocation(server: URL(string: "smb://nas.local")!, share: "Media", path: "shared", connectionID: "b")!
+        store.add(connectionA); store.add(connectionB)
+        precondition(connectionA.id != connectionB.id && store.contains(connectionA) && store.contains(connectionB))
+        let originalID = "legacy-identity"
+        let migratedFavorite = FavoriteLocation(server: URL(string: "smb://old.invalid")!, share: "Media", path: "shared", connectionID: "a", identity: originalID)!
+        let roundTrip = try! JSONDecoder().decode(FavoriteLocation.self, from: JSONEncoder().encode(migratedFavorite))
+        precondition(roundTrip.id == originalID && roundTrip.connectionID == "a")
+        store.add(migratedFavorite)
+        precondition(store.contains(migratedFavorite), "Migrated identities must match the same connection/path")
+        print("PASS: favorites persist, sort, distinguish server/account connections, preserve migrated IDs and omit credentials")
     }
 }
