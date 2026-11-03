@@ -56,6 +56,23 @@ final class CachedRemoteFile: @unchecked Sendable {
         return (fetched, residentBytes, Int64(maxBlocks) * blockSize)
     }
 
+    func cancelAndClearCache() {
+        cancellation.cancel()
+        // A worker may hold the cache lock while waiting for a remote read.
+        // Let cancellation release it without blocking player dismissal on main.
+        DispatchQueue.global(qos: .utility).async { [self] in
+            lock.lock(); defer { lock.unlock() }
+            blocks.removeAll(keepingCapacity: false)
+            recent.removeAll(keepingCapacity: false)
+            metricsLock.lock()
+            let released = residentBytes
+            residentBytes = 0
+            seenBlocks.removeAll(keepingCapacity: false)
+            metricsLock.unlock()
+            streamingLog.notice("Playback cache cleared bytes=\(released)")
+        }
+    }
+
     /// Called only on worker queues. Serialize cache fills while libsmb2 runs on its own queue.
     func read(offset: Int64, count: Int, interrupt: CancellationFlag? = nil) throws -> Data {
         guard !cancellation.cancelled else { throw CancellationError() }
@@ -352,7 +369,7 @@ final class StreamingSession: @unchecked Sendable {
         stopLock.lock()
         if stopped { stopLock.unlock(); return }
         stopped = true; stopLock.unlock()
-        source.cancellation.cancel()
+        source.cancelAndClearCache()
         #if canImport(AetherEngine)
         Task { @MainActor [self] in externalSubtitles?.stop(); externalSubtitles = nil; aetherPlayback?.stop(); aetherPlayback = nil }
         #endif

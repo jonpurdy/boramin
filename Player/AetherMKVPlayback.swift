@@ -67,6 +67,15 @@ final class AetherFileReader: IOReader, @unchecked Sendable {
 final class AetherMKVPlayback {
     let engine: AetherEngine
     var player: AVPlayer? { engine.currentAVPlayer }
+    var usesSubtitleOverlay: Bool {
+        if player == nil || styledSubtitles != nil { return true }
+        guard let track = engine.subtitleTracks.first(where: { $0.id == engine.activeSubtitleTrackIndex }) else { return false }
+        // FFmpeg reports decoder names (pgssub/dvdsub/dvbsub), while some
+        // sources use descriptor names. Bitmap captions need the image overlay.
+        let codec = track.codec.lowercased()
+        return ["pgs", "hdmv", "dvb_sub", "dvbsub", "dvd_sub", "dvdsub", "vobsub"]
+            .contains { codec.contains($0) }
+    }
     let info: MediaInfo
     let styledSubtitles: StyledASSCoordinator?
     var onItemChanged: ((AVPlayer, AVPlayerItem) -> Void)?

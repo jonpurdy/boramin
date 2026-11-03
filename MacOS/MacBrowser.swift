@@ -84,7 +84,12 @@ struct MacLibraryView: View {
     }
     private var watchingTable: some View {
         Table(watching.filter { search.isEmpty || ($0.file?.name ?? "").localizedCaseInsensitiveContains(search) }, selection: $watchingSelection) {
-            TableColumn("Name") { item in Text(item.file.map { "\(item.progress.prefix) \($0.name)" } ?? "\(item.progress.prefix) Unavailable video") }
+            TableColumn("Name") { item in
+                HStack(alignment: .center, spacing: 6) {
+                    PlaybackMediaIcon(symbol: "film", progress: item.progress)
+                    Text(item.file?.name ?? "Unavailable video")
+                }
+            }
             TableColumn("Length / Size") { item in
                 if let file = item.file { WatchingPlaybackDetails(file: file, duration: item.progress.duration, browser: library.watchingBrowser).foregroundStyle(.secondary) }
             }.width(270)
@@ -168,7 +173,13 @@ private struct MacFilesView: View {
     }
     var body: some View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
-            TableColumn("Name", value: \.name) { row in Label(row.displayName, systemImage: row.directory ? "folder" : "film").lineLimit(1) }.width(min: 250, ideal: 440)
+            TableColumn("Name", value: \.name) { row in
+                HStack(alignment: .center, spacing: 6) {
+                    PlaybackMediaIcon(symbol: row.directory ? "folder" : "film",
+                                      progress: row.directory ? nil : row.entry?.progress)
+                    Text(row.name)
+                }.lineLimit(1)
+            }.width(min: 250, ideal: 440)
             TableColumn("Kind") { row in Text(row.entry == nil ? "SMB Share" : row.kind).foregroundStyle(.secondary) }.width(100)
             TableColumn("Size") { row in Text(row.directory ? "—" : (row.entry?.playbackDetails ?? ByteCountFormatter.string(fromByteCount: row.size, countStyle: .file))).foregroundStyle(.secondary).task(id: row.entry.map { browser.metadataTaskID($0) } ?? row.id) { if let entry = row.entry { await browser.loadMetadata(entry) } } }.width(270)
         }

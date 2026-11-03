@@ -139,6 +139,53 @@ private final class Callback<Value>: @unchecked Sendable {
         transport.stop()
         precondition(normalFlag.cancelled)
         print("PASS: normal streaming listener starts and stops without reading SMB")
+
+        let blockSize = 256 * 1024
+        let cachedSource = CachedRemoteFile(size: Int64(3 * blockSize), cancellation: CancellationFlag()) { range, _, _, completion in
+            completion(.success(Data(repeating: 7, count: Int(range.count))))
+            return nil
+        }
+        let untouchedSource = CachedRemoteFile(size: Int64(blockSize), cancellation: CancellationFlag()) { range, _, _, completion in
+            completion(.success(Data(repeating: 9, count: Int(range.count))))
+            return nil
+        }
+        try await Task.detached {
+            for block in 0..<3 { _ = try cachedSource.read(offset: Int64(block * blockSize), count: 8) }
+            _ = try untouchedSource.read(offset: 0, count: 8)
+        }.value
+        precondition(cachedSource.transferMetrics.cached == Int64(3 * blockSize))
+        let cachedTransport = try StreamingSession(source: cachedSource, fileExtension: "mp4")
+        cachedTransport.stop(); cachedTransport.stop()
+        try await wait { cachedSource.transferMetrics.cached == 0 }
+        precondition(cachedSource.cancellation.cancelled && cachedSource.fetchedBytes == Int64(3 * blockSize))
+        precondition(untouchedSource.transferMetrics.cached == Int64(blockSize) && !untouchedSource.cancellation.cancelled)
+        do { _ = try cachedSource.read(offset: 0, count: 8); preconditionFailure("Stopped source refilled its cache") }
+        catch is CancellationError { }
+        untouchedSource.cancelAndClearCache()
+        try await wait { untouchedSource.transferMetrics.cached == 0 }
+        print("PASS: stopping a retained transport clears cached blocks, preserves transfer totals, and leaves another source intact")
+
+        let stalledRead = Callback<Data>()
+        let stalledSource = CachedRemoteFile(size: Int64(2 * blockSize), cancellation: CancellationFlag()) { range, _, _, completion in
+            if range.lowerBound == 0 { completion(.success(Data(repeating: 1, count: Int(range.count)))) }
+            else { stalledRead.start(completion) }
+            return { stalledRead.interrupt() }
+        }
+        _ = try await Task.detached { try stalledSource.read(offset: 0, count: 8) }.value
+        let pendingRead = Task.detached { try stalledSource.read(offset: Int64(blockSize), count: 8) }
+        try await wait { stalledRead.started }
+        let stalledTransport = try StreamingSession(source: stalledSource, fileExtension: "mkv")
+        stalledTransport.stop()
+        // MainActor remains available while cleanup waits for the cancelled reader.
+        precondition(stalledSource.cancellation.cancelled)
+        do { _ = try await pendingRead.value; preconditionFailure("Stopped pending read returned bytes") }
+        catch is CancellationError { }
+        precondition(stalledRead.interruptCount > 0)
+        try await wait { stalledSource.transferMetrics.cached == 0 }
+        stalledRead.finish(.success(Data(repeating: 2, count: blockSize)))
+        precondition(stalledSource.transferMetrics.cached == 0)
+        print("PASS: stop releases the cache behind a stalled reader without blocking main; late bytes cannot refill it")
+
         let flag = CancellationFlag(); flag.cancel()
         let source = CachedRemoteFile(client: manager, path: "unused.mkv", size: 100, cancellation: flag)
         do { _ = try source.read(offset: 0, count: 10); preconditionFailure("Cancelled blocking reader started") }

@@ -17,10 +17,10 @@ All three targets live in **BoraMin.xcodeproj** and use `com.example.BoraMin`. B
 - **iCloud sync:** synchronize saved connections, credentials, favorites and playback history. Fixed conflicting legacy connection identities that could leave a connection missing on one device or duplicated on another, while preserving existing saved references.
 - **Playback labels:** file details show the expected route before duration/size: AVP (AVPlayer), AEP (AetherEngine), or HW9 (original hardware VP9). Visible files are probed in the background, with a bounded local-only metadata cache; Watching also probes visible uncached entries and reuses local results. A label is a route prediction, not a compatibility or decoder-status guarantee.
 - **Favorites:** save folder/share paths using the context menu. Favorites sort alphabetically and keep their navigation separate from Files.
-- **Watching:** unfinished videos, ordered by last save time. Filenames show progress such as `(80%, 00:12:45)`. Reopening resumes playback; completion returns to the previous screen. **Reset Playback** clears progress and the saved subtitle choice.
+- **Watching:** unfinished videos, ordered by last save time. A small pie replaces the leading film icon for videos with a saved playback position instead of a percentage/timestamp prefix; accessibility announces the percentage watched. The same indicator appears for in-progress videos in file browsing. On iOS/tvOS, the folder path appears beneath the filename, with playback route, duration and size using the same row layout as file browsing: beneath the filename/location on iPhone in portrait, and on the right in landscape and on tvOS. Reopening resumes playback; completion returns to the previous screen. **Reset Playback** clears progress and the saved subtitle choice.
 - **Audio & Subtitles:** select audio, embedded subtitles, external subtitles, or Off. Uses a sheet on iOS, a popover on Mac, and a system menu above the tvOS scrubber.
 - **External subtitles:** load matching `.srt`, `.vtt`, `.ass`, or `.ssa` files from the video's folder. For example, `Movie.mp4` matches `Movie.ass`. ASS/SSA styling is rendered with libass.
-- **Settings:** iCloud sync, Display all files, Subtitle Size, and Show Debug Info. Subtitle Size offers 100%, 125%, 150%, and 200%, initially 125%, and is saved per device.
+- **Settings:** iCloud sync, Display all files, Subtitle Size, and Show Debug Info, plus Expand filename immediately in list views on tvOS. Subtitle Size offers 100%, 125%, 150%, and 200%, initially 125%, and is saved per device.
 - **File deletion:** delete individual SMB files through the context menu with confirmation. HTTP connections are read-only; folders cannot be deleted.
 
 Manage servers from **Connections** on the main screen. Opening Connections on iOS/tvOS always shows the saved list first, including after browsing a server or a failed attempt. Open an entry to browse it; use its context menu to edit it or choose **Delete Connection…**, or **Add connection…** for an empty form. Deleting asks for confirmation and syncs when iCloud is enabled; server files, favorites and playback history are kept. Give it an optional name and enter its server address and credentials. Leave Share empty to browse available shares. Saving works offline; Connections opens the server only when you choose an entry. An unavailable server has Retry/Edit actions and does not remove favorites or prevent choosing another connection. Passwords are stored in Keychain; server addresses and credentials are never bundled with the app.
@@ -41,9 +41,13 @@ Before opening a remote file, BoraMin requests one byte and requires `206 Partia
 - **Other MKVs and AetherEngine formats:** AetherEngine uses native AVPlayer when supported, otherwise its software video surface with app-written controls built from standard SwiftUI components.
 - **VP9 in MKV / MP4 / M4V / MOV / WebM:** the original hardware VideoToolbox decoder and separate video layer, with AVKit controls. This path supports matching external subtitles, but not AetherEngine's embedded audio/subtitle track selection.
 
-Playback streams requested ranges rather than downloading the whole movie. Each remote stream has a **128 MiB compressed cache**; decoded frames and player buffers use additional memory.
+Playback streams requested ranges rather than downloading the whole movie. Each remote stream has a **128 MiB compressed cache**; decoded frames and player buffers use additional memory. Closing a video cancels reads and clears its compressed cache on a worker queue, even if the stopped playback source remains referenced.
 
 Native sessions retain AVKit's transport controls. iOS playback opens in landscape and native video supports fit/fill pinch zoom. Mac uses native tables, windows, keyboard shortcuts, and full-screen playback.
+
+On iOS/tvOS, backgrounding AetherEngine playback saves progress and closes the player, returning to the list on re-entry. This includes AetherEngine's native AVPlayer route; its software route already behaves this way. Open the video again to resume. Ordinary AVPlayer playback retains its existing background behavior.
+
+On iOS, filenames in file browsing and Watching wrap fully without truncation. On tvOS, filenames truncate to one line with an ellipsis; keeping a row focused for one second wraps the full filename and expands the row. The tvOS-only **Expand filename immediately in list views** setting restores immediate expansion; it is off by default and saved on the device. Filenames do not scroll horizontally.
 
 ### Subtitle behavior and limits
 
@@ -75,6 +79,8 @@ python3 tools/build_ffmpeg.py --platform macos
 ```
 
 FFmpeg libraries only need rebuilding when missing or when their configuration changes. Open **BoraMin.xcodeproj**, select a scheme from the table above, choose your signing team, and build for a physical device or Apple Silicon Mac. SwiftPM resolves the engine/subtitle dependencies. Keep project-definition changes in `tools/create_project.py`; regeneration preserves version/build and signing choices.
+
+For an intentional release version change across all platforms, pass `--marketing-version 0.5.2 --build-number 7` to the project generator. Normal regeneration preserves the existing versions and signing settings.
 
 For the Apple Silicon tvOS Simulator, also run `python3 tools/build_ffmpeg.py --platform tvos-simulator`, then select a tvOS 26.2 or newer simulator under **BoraMin tvOS**. Keep signing enabled so Xcode embeds the simulator CloudKit entitlements. The project chooses separate FFmpeg libraries for simulator and device builds; device libraries cannot be used in the simulator. Simulator behavior does not establish hardware decoder behavior or reproduce every physical-device termination.
 

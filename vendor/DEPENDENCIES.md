@@ -6,6 +6,8 @@
 
 AMSMB2 and libsmb2 source and notices are vendored. Both AMSMB2 manifests (Package.swift and Package@swift-6.0.swift) use a static library and omit upstream test targets and their otherwise-unused swift-atomics dependency. The original playback dependencies build offline after generating FFmpeg libraries; the experimental AetherEngine package additionally requires initial SwiftPM dependency resolution.
 
+Local libsmb2 socket patch: outgoing sockets enable `SO_NOSIGPIPE` where supported, returning the existing write error instead of terminating the app when a stale connection receives a write. Socket setup fails if this protection cannot be enabled. Keep this patch when updating the vendored library; `python3 tools/test_smb_socket.py` exercises a reset loopback peer through production socket creation and `writev`.
+
 FFmpeg is built without GPL/nonfree components, video software decoders, network protocols, programs or encoders. It supplies container demuxing and audio decoding/resampling. VP9 video is decoded only by VideoToolbox. FFmpeg LGPL 2.1 text is in FFmpeg-LICENSE.txt; AMSMB2/libsmb2 notices remain in their source trees. Build objects and scripts are retained for relinking. Preserve applicable library notices and relinking/source requirements when distributing binaries.
 
 

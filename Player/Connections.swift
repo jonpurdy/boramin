@@ -1,5 +1,73 @@
 import SwiftUI
 
+struct PlaybackMediaIcon: View {
+    let symbol: String
+    var progress: PlaybackProgress? = nil
+    @ScaledMetric(relativeTo: .body) private var columnWidth: CGFloat = 24
+
+    var body: some View {
+        Group {
+            if let progress { PlaybackProgressPie(progress: progress) }
+            else { Image(systemName: symbol) }
+        }
+        #if os(tvOS)
+        .frame(width: 48)
+        #else
+        .frame(width: columnWidth)
+        #endif
+    }
+}
+
+/// Saved playback position, starting at twelve o'clock and filling clockwise.
+struct PlaybackProgressPie: View {
+    let progress: PlaybackProgress
+    @Environment(\.isFocused) private var isFocused
+    @ScaledMetric(relativeTo: .body) private var diameter: CGFloat = 18
+
+    private var fraction: Double {
+        guard progress.seconds.isFinite, progress.duration.isFinite, progress.duration > 0 else { return 0 }
+        return min(1, max(0, progress.seconds / progress.duration))
+    }
+
+    private var indicatorColor: Color {
+        #if os(tvOS)
+        isFocused ? .black : .white
+        #else
+        .primary
+        #endif
+    }
+
+    var body: some View {
+        ZStack {
+            Circle().strokeBorder(indicatorColor, lineWidth: 2)
+            PlaybackPieSector(fraction: fraction).fill(indicatorColor).padding(2)
+        }
+        #if os(tvOS)
+        .frame(width: 28, height: 28)
+        #else
+        .frame(width: diameter, height: diameter)
+        #endif
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Playback position")
+        .accessibilityValue("\(Int(fraction * 100)) percent watched")
+    }
+}
+
+private struct PlaybackPieSector: Shape {
+    let fraction: Double
+    func path(in rect: CGRect) -> Path {
+        guard fraction > 0 else { return Path() }
+        if fraction >= 1 { return Path(ellipseIn: rect) }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        var path = Path()
+        path.move(to: center)
+        path.addArc(center: center, radius: min(rect.width, rect.height) / 2,
+                    startAngle: .degrees(-90), endAngle: .degrees(-90 + 360 * fraction), clockwise: false)
+        path.closeSubpath()
+        return path
+    }
+}
+
 /// Saved connections use platform-standard list rows; opening connects only on demand.
 struct ConnectionsList: View {
     @ObservedObject private var store = ConnectionPreferences.shared
@@ -66,23 +134,42 @@ struct ConnectionsList: View {
                         Button("Delete Connection…", systemImage: "trash", role: .destructive) { connectionToDelete = connection }
                     }
             }
+            #if os(tvOS)
+            Button { editor = ConnectionDraft() } label: {
+                connectionRow(symbol: "plus") { Text("Add connection…") }
+            }
+            #else
             Button("Add connection…", systemImage: "plus") { editor = ConnectionDraft() }
-                #if os(iOS)
                 .buttonStyle(.plain)
-                #endif
+            #endif
         }
         #endif
     }
     private func row(_ connection: SavedConnection) -> some View {
-        HStack {
-            Image(systemName: "externaldrive.connected.to.line.below")
+        connectionRow(symbol: "externaldrive.connected.to.line.below") {
             VStack(alignment: .leading, spacing: 4) {
                 Text(connection.title).foregroundStyle(.primary)
                 Text(connection.detail).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+    private func connectionRow<Content: View>(symbol: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: connectionRowSpacing) {
+            Image(systemName: symbol)
+                #if os(tvOS)
+                .frame(width: 64)
+                #endif
+            content()
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+    private var connectionRowSpacing: CGFloat? {
+        #if os(tvOS)
+        24
+        #else
+        nil
+        #endif
     }
     private func open(_ connection: SavedConnection) {
         if let onOpen { onOpen(connection) }

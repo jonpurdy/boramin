@@ -7,6 +7,7 @@ lab = root.parent/'atv vp9-av1 testing'
 prefix = Path(subprocess.check_output(['brew','--prefix','ffmpeg'],text=True).strip())
 def run(args): subprocess.run([str(x) for x in args],cwd=root,check=True)
 (root/'build/MacModuleCache').mkdir(parents=True, exist_ok=True)
+run([sys.executable, 'tools/test_smb_socket.py'])
 # Playback probes build through the production Xcode project below.
 with tempfile.TemporaryDirectory(prefix='boramin-tests-') as tmp:
     tmp=Path(tmp)

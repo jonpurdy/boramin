@@ -26,6 +26,63 @@ import AMSMB2
         }
         return bytes
     }
+    static func testEmbeddedPGS(folder: URL) async throws {
+        let bytes = try Data(contentsOf: folder.appendingPathComponent("pgs.mkv"))
+        let source = CachedRemoteFile(size: Int64(bytes.count), cancellation: CancellationFlag()) { range, _, _, completion in
+            completion(.success(bytes.subdata(in: Int(range.lowerBound)..<Int(range.upperBound))))
+            return nil
+        }
+        let transport = try StreamingSession(source: source, fileExtension: "mkv")
+        defer { transport.stop() }
+        try await transport.start()
+        let timeline = try await transport.configureAetherPlayback()
+        guard let backend = transport.aetherPlayback, let player = backend.player, let item = player.currentItem else {
+            throw PlayerError("PGS fixture did not use native Aether video")
+        }
+        try require(backend.styledSubtitles == nil && transport.externalSubtitles == nil, "PGS fixture unexpectedly has ASS/external rendering")
+        let media = PreparedMedia(title: "PGS fixture", source: transport.sourceURL, timeline: timeline,
+            usesSampleBufferVideo: false, directory: folder, info: backend.info, streaming: transport, keyframes: [])
+        let panel = PlaybackTracks(media: media)
+        defer { panel.stop() }
+        panel.bind(player: player)
+        try await wait("PGS menu readiness") { panel.subtitles.ready }
+        guard let pgs = backend.engine.subtitleTracks.first(where: { $0.codec.lowercased().contains("pgs") }),
+              let plain = backend.engine.subtitleTracks.first(where: { ["subrip", "srt"].contains($0.codec) }) else {
+            throw PlayerError("Embedded PGS and SRT tracks missing: \(backend.engine.subtitleTracks.map(\.codec))")
+        }
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil); item.add(output)
+        panel.subtitles.select("embedded:\(pgs.id)")
+        backend.engine.play()
+        try await wait("decoded native video and PGS image cue") {
+            output.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil) != nil &&
+            backend.engine.subtitleCues.contains { cue in
+                guard case .image = cue.body else { return false }
+                return backend.engine.sourceTime >= cue.startTime && backend.engine.sourceTime < cue.endTime
+            }
+        }
+        backend.engine.pause()
+        func captionPixels() -> Int {
+            let renderer = ImageRenderer(content: PlaybackSubtitleOverlay(media: media).frame(width: 640, height: 360))
+            guard let image = renderer.cgImage else { return 0 }
+            let data = pixels(image)
+            return stride(from: 0, to: data.count, by: 4).filter { data[$0] > 200 && data[$0 + 1] > 200 && data[$0 + 2] > 200 && data[$0 + 3] > 200 }.count
+        }
+        try await wait("PGS pixels in production caption overlay") { captionPixels() >= 1000 }
+        panel.subtitles.select("off")
+        try await wait("PGS Off clears caption pixels") { backend.engine.activeSubtitleTrackIndex == nil && captionPixels() == 0 }
+        panel.subtitles.select("embedded:\(pgs.id)")
+        try await wait("PGS reselection renders") { captionPixels() >= 1000 }
+        await backend.engine.seek(to: 8)
+        try await wait("PGS pixels after seek") { backend.engine.sourceTime >= 7 && captionPixels() >= 1000 }
+        panel.subtitles.select("embedded:\(plain.id)")
+        let nativeGroup = try await item.asset.loadMediaSelectionGroup(for: .legible)
+        try await wait("SRT selects native caption option") {
+            guard let group = nativeGroup else { return false }
+            return item.currentMediaSelection.selectedMediaOption(in: group) != nil && captionPixels() == 0
+        }
+        try require(backend.player === player && player.currentItem === item, "Subtitle selection replaced video playback")
+        print("PASS native Aether PGS menu selection renders pixels without ASS/external tracks; Off, reselection, seek and native SRT switching preserve the player")
+    }
     static func testSubtitleResume(player: AVPlayer, tracks: [ExternalSubtitles.Track], defaults: UserDefaults) async throws {
         let positions = PlaybackPositions(defaults: defaults), key = "subtitle-resume-fixture"
         var selected: SavedSubtitleSelection?
@@ -270,6 +327,7 @@ import AMSMB2
         try require(positions.subtitleSelection(for: "mkv-resume") == choice, "MKV restore changed the selected source identity")
         print("PASS embedded MKV subtitle identity automatically restores through the public engine API")
         print("PASS unified track panel audio rows/selections, MKV embedded/external ASS switching and Off through public engine APIs")
+        try await testEmbeddedPGS(folder: folder)
     }
 }
 

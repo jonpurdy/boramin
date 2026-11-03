@@ -6,12 +6,19 @@ import argparse
 import hashlib
 import os
 import plistlib
+import re
 import subprocess
 from xml.sax.saxutils import escape
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--include-cloud-probe', action='store_true', help='Include the isolated iOS synthetic CloudKit regression screen')
+parser.add_argument('--marketing-version', help='Set the app/framework version on every platform')
+parser.add_argument('--build-number', type=int, help='Set the positive app/framework build number on every platform')
 args = parser.parse_args()
+if args.marketing_version is not None and not re.fullmatch(r'\d+\.\d+(?:\.\d+)?', args.marketing_version):
+    parser.error('--marketing-version must contain two or three numeric components')
+if args.build_number is not None and args.build_number < 1:
+    parser.error('--build-number must be positive')
 root = Path(__file__).resolve().parent.parent
 project = root/'BoraMin.xcodeproj'
 project.mkdir(exist_ok=True)
@@ -39,6 +46,14 @@ for path, legacy_platform in [(project, 'tvos'), (root/'iOS/BoraMin.xcodeproj', 
             if settings.get('PRODUCT_BUNDLE_IDENTIFIER') == APP_BUNDLE_ID:
                 keys += ['PROVISIONING_PROFILE_SPECIFIER']
             previous.setdefault((platform, config['name']), {k: settings[k] for k in keys if k in settings})
+
+version_overrides = {}
+if args.marketing_version is not None:
+    version_overrides['MARKETING_VERSION'] = args.marketing_version
+if args.build_number is not None:
+    version_overrides['CURRENT_PROJECT_VERSION'] = str(args.build_number)
+for settings in previous.values():
+    settings.update(version_overrides)
 
 objects = {}
 def ident(key):
@@ -109,7 +124,7 @@ for platform, spec in platforms.items():
     obj(platform+':resources', 'PBXResourcesBuildPhase', buildActionMask=2147483647, files=resources, runOnlyForDeploymentPostprocessing=0)
     targets.append(obj(platform+':target', 'PBXNativeTarget', buildConfigurationList=ident(platform+':configs'), buildPhases=[ident(platform+':'+phase) for phase in ('sources', 'frameworks', 'resources', 'embed')], buildRules=[], dependencies=[media_dependency], name=name, productName='BoraMin', productReference=product, productType='com.apple.product-type.application', packageProductDependencies=[ident(platform+':smb'), ident(platform+':aether'), ident(platform+':ass')]))
     for config in ('Debug', 'Release'):
-        settings = dict(SDKROOT=spec['sdk'], SUPPORTED_PLATFORMS=spec['sdk'], PRODUCT_NAME='BoraMin', PRODUCT_MODULE_NAME='BoraMin_'+platform, PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID, DEVELOPMENT_TEAM='EXAMPLE000', CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS=spec['entitlements'], GENERATE_INFOPLIST_FILE='YES', INFOPLIST_FILE=spec['info'], MARKETING_VERSION='0.5', CURRENT_PROJECT_VERSION='5', ASSETCATALOG_COMPILER_APPICON_NAME=spec['icon_name'], SWIFT_OBJC_BRIDGING_HEADER='Player/Player-Bridging-Header.h', HEADER_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/include'], LIBRARY_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/lib'], OTHER_LDFLAGS=['-lavformat', '-lavcodec', '-lswresample', '-lavutil', '-framework', 'AudioToolbox', '-framework', 'CoreMedia', '-framework', 'VideoToolbox', '-lz', '-lbz2', '-liconv'])
+        settings = dict(SDKROOT=spec['sdk'], SUPPORTED_PLATFORMS=spec['sdk'], PRODUCT_NAME='BoraMin', PRODUCT_MODULE_NAME='BoraMin_'+platform, PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID, DEVELOPMENT_TEAM='EXAMPLE000', CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS=spec['entitlements'], GENERATE_INFOPLIST_FILE='YES', INFOPLIST_FILE=spec['info'], MARKETING_VERSION='0.5.2', CURRENT_PROJECT_VERSION='7', ASSETCATALOG_COMPILER_APPICON_NAME=spec['icon_name'], SWIFT_OBJC_BRIDGING_HEADER='Player/Player-Bridging-Header.h', HEADER_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/include'], LIBRARY_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/lib'], OTHER_LDFLAGS=['-lavformat', '-lavcodec', '-lswresample', '-lavutil', '-framework', 'AudioToolbox', '-framework', 'CoreMedia', '-framework', 'VideoToolbox', '-lz', '-lbz2', '-liconv'])
         settings[spec['deployment'][0]] = spec['deployment'][1]
         if platform == 'tvos':
             settings['SUPPORTED_PLATFORMS'] = 'appletvos appletvsimulator'

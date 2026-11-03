@@ -905,7 +905,18 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             }
         }
         backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.savePosition()
+            guard let self, !self.stopped else { return }
+            #if canImport(AetherEngine)
+            if self.media.streaming?.aetherPlayback != nil {
+                // AetherEngine releases its video pipeline before suspension.
+                // Save and dismiss while the native player still has its item,
+                // rather than returning to AVKit with an empty player shell.
+                self.stop()
+                self.onDismiss?()
+                return
+            }
+            #endif
+            self.savePosition()
         }
         observeCompletion(item)
         if media.usesSampleBufferVideo {
@@ -1226,7 +1237,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     #if canImport(SwiftAssRenderer)
     private func installStyledSubtitleOverlay() {
         guard let overlay = contentOverlayView else { return }
-        if media.streaming?.externalSubtitles != nil || media.streaming?.aetherPlayback?.styledSubtitles != nil {
+        if media.streaming?.externalSubtitles != nil || media.streaming?.aetherPlayback != nil {
             let host = UIHostingController(rootView: PlaybackSubtitleOverlay(media: media))
             host.view.backgroundColor = .clear; host.view.isUserInteractionEnabled = false
             addChild(host); overlay.addSubview(host.view); host.didMove(toParent: self)

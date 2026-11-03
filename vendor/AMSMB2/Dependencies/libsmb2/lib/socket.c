@@ -1077,6 +1077,22 @@ connect_async_ai(struct smb2_context *smb2, const struct addrinfo *ai, int *fd_o
                 return -EIO;
         }
 
+#ifdef SO_NOSIGPIPE
+        /* A stale connection after suspension must return EPIPE from writev,
+         * not terminate the application with SIGPIPE. Keep this per socket. */
+        {
+                int no_sigpipe = 1;
+                if (setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE,
+                               &no_sigpipe, sizeof(no_sigpipe)) != 0) {
+                        int err = errno;
+                        smb2_set_error(smb2, "Failed to disable SIGPIPE on smb2 socket. "
+                                       "Errno:%s(%d).", strerror(err), err);
+                        close(fd);
+                        return -EIO;
+                }
+        }
+#endif
+
 #ifdef _XBOX
         if(setsockopt(fd, SOL_SOCKET, 0x5801, (PCSTR)&bBroadcast, sizeof(BOOL) ) != 0 )
         {

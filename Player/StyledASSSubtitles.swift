@@ -253,15 +253,19 @@ struct AetherSubtitleOverlay: View {
     var controlsVisible = false
     var videoRect: CGRect? = nil
     @ObservedObject private var clock: PlaybackClock
+    @ObservedObject private var engine: AetherEngine
     init(backend: AetherMKVPlayback, controlsVisible: Bool = false, videoRect: CGRect? = nil) {
         self.backend = backend; self.controlsVisible = controlsVisible; self.videoRect = videoRect
         _clock = ObservedObject(wrappedValue: backend.engine.clock)
+        _engine = ObservedObject(wrappedValue: backend.engine)
     }
     var body: some View {
-        if let coordinator = backend.styledSubtitles {
-            StyledOrPlainSubtitles(backend: backend, coordinator: coordinator, controlsVisible: controlsVisible, time: clock.sourceTime, videoRect: videoRect)
-        } else {
-            AetherPlainSubtitles(engine: backend.engine, videoSize: CGSize(width: Int(backend.info.width), height: Int(backend.info.height)), controlsVisible: controlsVisible, time: clock.sourceTime)
+        if backend.usesSubtitleOverlay {
+            if let coordinator = backend.styledSubtitles {
+                StyledOrPlainSubtitles(backend: backend, coordinator: coordinator, controlsVisible: controlsVisible, time: clock.sourceTime, videoRect: videoRect)
+            } else {
+                AetherPlainSubtitles(engine: engine, videoSize: CGSize(width: Int(backend.info.width), height: Int(backend.info.height)), controlsVisible: controlsVisible, time: clock.sourceTime)
+            }
         }
     }
 }

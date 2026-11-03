@@ -127,7 +127,7 @@ final class MacPlayerView: AVPlayerView {
         #if canImport(SwiftAssRenderer)
         let tracks = PlaybackTracks(media: media); self.tracks = tracks
         tracks.bind(player: player)
-        if media.streaming?.externalSubtitles != nil || media.streaming?.aetherPlayback?.styledSubtitles != nil, let overlay = playerView.contentOverlayView {
+        if media.streaming?.externalSubtitles != nil || media.streaming?.aetherPlayback != nil, let overlay = playerView.contentOverlayView {
             let host = PlaybackSubtitleHostingView(rootView: PlaybackSubtitleOverlay(media: media))
             host.frame = overlay.bounds; host.autoresizingMask = [.width, .height]
             overlay.addSubview(host); playerView.subtitleHost = host; playerView.subtitleMedia = media

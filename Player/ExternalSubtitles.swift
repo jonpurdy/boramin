@@ -216,7 +216,7 @@ private let externalSubtitleLog = Logger(subsystem: "com.example.BoraMin", categ
             let index = key.hasPrefix("embedded:") ? Int(key.dropFirst("embedded:".count)) : nil
             if let backend {
                 backend.selectSubtitle(index: index ?? -1)
-                backend.engine.setNativeSubtitleRendering(backend.player != nil && backend.styledSubtitles == nil)
+                backend.engine.setNativeSubtitleRendering(!backend.usesSubtitleOverlay)
             }
             else if nativeGroup != nil {
                 let option = index.flatMap { nativeOptions.indices.contains($0) ? nativeOptions[$0] : nil }
@@ -305,7 +305,7 @@ struct PlaybackSubtitleOverlay: View {
     var body: some View {
         if let subtitles = media.streaming?.externalSubtitles {
             ExternalOrEmbeddedSubtitles(subtitles: subtitles, media: media, controlsVisible: controlsVisible, videoRect: videoRect)
-        } else if let backend = media.streaming?.aetherPlayback, backend.styledSubtitles != nil || backend.player == nil {
+        } else if let backend = media.streaming?.aetherPlayback {
             AetherSubtitleOverlay(backend: backend, controlsVisible: controlsVisible, videoRect: videoRect)
         }
     }
@@ -334,7 +334,7 @@ private struct ExternalOrEmbeddedSubtitles: View {
                 .onChange(of: rect.size) { _, size in subtitles.setCanvas(size, scale: scale) }
                 .onChange(of: scale) { _, value in subtitles.setCanvas(rect.size, scale: value) }
             }.clipped().allowsHitTesting(false)
-        } else if let backend = media.streaming?.aetherPlayback, backend.styledSubtitles != nil || backend.player == nil {
+        } else if let backend = media.streaming?.aetherPlayback {
             AetherSubtitleOverlay(backend: backend, controlsVisible: controlsVisible, videoRect: videoRect)
         }
     }

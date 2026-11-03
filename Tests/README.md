@@ -45,6 +45,8 @@ Run the resulting `build/AetherSoftwareTests/Derived/Build/Products/Release/Bora
 
 Building a different mode overwrites the same generated project/product. These probes can open temporary test windows. Real-SMB mode is optional; do not use private defaults for routine isolated tests.
 
+The external subtitle probe also requires `python3 tools/create_pgs_fixture.py` alongside the ASS/native-MP4 fixtures in [external subtitle tests](../docs/External-subtitles.md#local-regression-probe). This creates a synthetic native-video MKV with PGS and SRT tracks, exercising decoded PGS cues and actual production-overlay pixels without ASS or sidecars, plus Off/reselection/seek and native-text switching.
+
 After a normal app build, verify FFmpeg isolation with `python3 tools/verify_media_linkage.py /absolute/path/to/BoraMin.app`.
 
 ### Full bridge/hardware and Mac window suites
@@ -102,9 +104,13 @@ After an Xcode build, run `python3 tools/verify_media_linkage.py /absolute/path/
 
 ## Connection opening regression
 
+`python3 tools/test_smb_socket.py` compiles the vendored libsmb2 C sources with their Apple configuration and runs a local TCP-reset regression. It connects using production `smb2_connect_async`, resets the loopback peer, then sends an actual queued SMB echo through production `writev`. With the default SIGPIPE disposition, the original code terminates with signal 13; the patched socket returns `EPIPE` and an SMB error while the process survives. It requires normal host access for loopback sockets, no NAS, credentials, device or SMB server. The main suite includes it. This isolates the socket failure mechanism; physical-device navigation/background-return validation remains separate.
+
 `python3 tools/run_playback_probe.py browsing offline` runs the extracted SMB service's offline checks: mixed file/folder natural sorting, hidden-file filtering, metadata/path mapping, server validation, and cancellation before a metadata read. It needs no server, device, Keychain, or iCloud account.
 
 `python3 tools/run_playback_probe.py cancellation offline` checks explicit browser cancellation, cancellation before startup, stalled callback waiters, late results/errors, completion/cancellation races, and isolation from a newer operation. It also checks fresh SMB-session replacement, returning to the Connections list without a foreground reconnect, cancelled blocking reads/preparation, and normal loopback-listener startup. No server, device, or iCloud account is required; test preferences are disposable. Underlying SDK callbacks may finish later, but must never publish cancelled results or disturb a newer operation.
+
+The same cancellation probe fills a retained playback source's compressed cache and verifies that stopping its transport clears cached bytes without clearing another source or resetting transfer totals. A stalled-read case checks that cancellation lets worker cleanup acquire the cache lock, while dismissal remains free to run on MainActor and late bytes cannot refill the stopped cache.
 
 `SMBDeletionProbe.swift` is an opt-in integration check for a disposable local Samba share only: `python3 tools/run_playback_probe.py deletion /absolute/path/to/disposable-share`. It expects `TESTMEDIA` at `127.0.0.1:1445` with test-only account `boramin-test` / `test-only`, backed by that directory. It creates uniquely named temporary files, verifies their removal on the backing filesystem, and checks that denied deletion keeps the row and reports an error. Never point this fixture at a media share. The investigation made no production deletion change.
 

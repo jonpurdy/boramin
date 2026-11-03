@@ -35,7 +35,13 @@ struct BrowserScreen: View {
     @State private var fileToDelete: BrowserEntry?
     @AppStorage("displayAllFiles") private var displayAllFiles = false
     @AppStorage("showDebugInfo") private var showDebugInfo = false
+    #if os(tvOS)
+    @AppStorage("expandFilenameImmediately") private var expandFilenameImmediately = false
+    #endif
     @Environment(\.scenePhase) private var scenePhase
+    #if os(iOS)
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
     @Namespace private var listingFocus
     @FocusState private var focusedHome: Destination?
     private var browser: Browser {
@@ -218,7 +224,18 @@ struct BrowserScreen: View {
                             .browserDefaultFocus(browser.isShareListing ? browser.shares.isEmpty : firstFocusableEntry == nil, in: listingFocus)
                         if browser.isShareListing {
                             ForEach(browser.shares, id: \.self) { share in
-                                Button(share, systemImage: "externaldrive.connected.to.line.below") { browser.openShare(share) }
+                                Button { browser.openShare(share) } label: {
+                                    #if os(tvOS)
+                                    HStack(spacing: 24) {
+                                        Image(systemName: "externaldrive.connected.to.line.below")
+                                            .frame(width: 64)
+                                        Text(share)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    #else
+                                    Label(share, systemImage: "externaldrive.connected.to.line.below")
+                                    #endif
+                                }
                                     .browserDefaultFocus(share == browser.shares.first, in: listingFocus)
                                     .contextMenu { favoriteMenu(browser.favoriteShare(share)) }
                             }
@@ -228,11 +245,8 @@ struct BrowserScreen: View {
                                 Button {
                                     if entry.directory { browser.openDirectory(entry.path) } else { browser.play(entry) }
                                 } label: {
-                                    HStack {
-                                        Image(systemName: entry.directory ? "folder" : "film")
-                                        Text(entry.displayName)
-                                        Spacer()
-                                        if !entry.directory { Text(entry.playbackDetails).font(fileDetailsFont).foregroundStyle(.secondary) }
+                                    mediaRow(symbol: entry.directory ? "folder" : "film", name: entry.name, progress: entry.progress) {
+                                        if !entry.directory { Text(entry.playbackDetails) }
                                     }
                                 }.disabled(!entry.directory && !entry.playable)
                                     .task(id: browser.metadataTaskID(entry)) { await browser.loadMetadata(entry) }
@@ -298,6 +312,15 @@ struct BrowserScreen: View {
             } footer: {
                 Text("Show other files alongside folders and supported videos. Hidden files stay hidden.").font(.body).foregroundStyle(.secondary)
             }
+            #if os(tvOS)
+            Section {
+                Toggle("Expand filename immediately in list views", isOn: $expandFilenameImmediately)
+                    .toggleStyle(.switch)
+            } footer: {
+                Text("When off, focus a filename for one second to expand it. Saved on this device.")
+                    .font(.body).foregroundStyle(.secondary)
+            }
+            #endif
             Section {
                 SubtitleSizeSetting()
             } footer: {
@@ -359,15 +382,12 @@ struct BrowserScreen: View {
                     Button {
                         if let file = video.file { watchingBrowser.openWatching(file) }
                     } label: {
-                        HStack(spacing: 24) {
-                            Image(systemName: "film")
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("\(video.progress.prefix) \(video.file?.name ?? "Saved video · \(video.id.prefix(6))")")
-                                if let file = video.file {
-                                    WatchingPlaybackDetails(file: file, duration: video.progress.duration, browser: watchingBrowser).font(listSecondaryFont).foregroundStyle(.secondary)
-                                }
-                                Text(video.file?.currentFolderLocation ?? "Open this video's folder in Connections to recover its name and location.")
-                                    .font(listSecondaryFont).foregroundStyle(.secondary)
+                        mediaRow(symbol: "film",
+                                 name: video.file?.name ?? "Saved video · \(video.id.prefix(6))",
+                                 progress: video.progress,
+                                 location: video.file?.currentFolderLocation ?? "Open this video's folder in Connections to recover its name and location.") {
+                            if let file = video.file {
+                                WatchingPlaybackDetails(file: file, duration: video.progress.duration, browser: watchingBrowser)
                             }
                         }
                     }
@@ -410,6 +430,42 @@ struct BrowserScreen: View {
             }
         }
     }
+    private var stacksFileDetails: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone && verticalSizeClass != .compact
+        #else
+        false
+        #endif
+    }
+    private func mediaRow<Details: View>(symbol: String, name: String, progress: PlaybackProgress? = nil, location: String? = nil,
+                                         @ViewBuilder details: () -> Details) -> some View {
+        HStack {
+            PlaybackMediaIcon(symbol: symbol, progress: progress)
+            VStack(alignment: .leading, spacing: 6) {
+                MediaFilename(name: name)
+                if let location {
+                    Text(location).font(listSecondaryFont).foregroundStyle(.secondary)
+                }
+                if stacksFileDetails {
+                    details().font(listSecondaryFont).foregroundStyle(.secondary)
+                }
+            }
+            if stacksFileDetails {
+                Spacer(minLength: 0)
+            } else {
+                Spacer()
+                details().font(fileDetailsFont).foregroundStyle(.secondary)
+            }
+        }
+        #if os(tvOS)
+        // The entire label changes height when its filename wraps. Suppress
+        // inherited focus animation for the surrounding layout as well.
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
+        #endif
+    }
     @ViewBuilder private func favoriteMenu(_ location: FavoriteLocation?) -> some View {
         if let location {
             Button("Favorite", systemImage: "star") { favorites.add(location) }
@@ -429,6 +485,48 @@ struct BrowserScreen: View {
         } else if !navigation.isEmpty {
             navigation.removeLast()
         }
+    }
+}
+
+private struct MediaFilename: View {
+    let name: String
+    @Environment(\.isFocused) private var isFocused
+    #if os(tvOS)
+    @AppStorage("expandFilenameImmediately") private var expandImmediately = false
+    @State private var delayedExpansion = false
+    private struct ExpansionRequest: Hashable {
+        let name: String
+        let focused: Bool
+        let immediate: Bool
+    }
+    #endif
+
+    var body: some View {
+        Text(name)
+            #if os(tvOS)
+            .lineLimit(isFocused && (expandImmediately || delayedExpansion) ? nil : 1)
+            .onChange(of: isFocused) { _, _ in delayedExpansion = false }
+            .task(id: ExpansionRequest(name: name, focused: isFocused, immediate: expandImmediately)) {
+                delayedExpansion = false
+                guard isFocused, !expandImmediately else { return }
+                do { try await Task.sleep(for: .seconds(1)) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                delayedExpansion = true
+            }
+            #else
+            .lineLimit(nil)
+            #endif
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+            #if os(tvOS)
+            // Focus changes the line count; do not interpolate the text layout
+            // through the native button's focus animation.
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+            #endif
     }
 }
 
