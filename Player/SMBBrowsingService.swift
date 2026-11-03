@@ -74,6 +74,69 @@ import AMSMB2
         }
     }
 
+    struct FileDeletionResult: Sendable {
+        var removedPaths: [String]
+        var failedSubtitleNames: [String] = []
+    }
+
+    nonisolated static func associatedSubtitles(for video: BrowserEntry, in entries: [BrowserEntry]) -> [BrowserEntry] {
+        guard !video.directory, video.playable else { return [] }
+        let folder = (video.path as NSString).deletingLastPathComponent
+        let siblings = entries.filter { ($0.path as NSString).deletingLastPathComponent == folder && !$0.directory }
+        return siblings.filter { subtitle in
+            guard ExternalSubtitleFiles.matches(videoName: video.name, subtitleName: subtitle.name) else { return false }
+            // Check ownership per subtitle: Movie.en.mkv also uses Movie.en.srt.
+            // Ignore case conservatively for sharing protection on SMB servers.
+            return !siblings.contains { other in
+                other.path != video.path && other.playable &&
+                ExternalSubtitleFiles.matches(videoName: other.name.lowercased(), subtitleName: subtitle.name.lowercased())
+            }
+        }
+    }
+
+    nonisolated static func validateDeletion(expected: BrowserEntry, attributes: [URLResourceKey: any Sendable]) throws {
+        guard !expected.directory,
+              attributes[.fileResourceTypeKey] as? URLFileResourceType == .regular,
+              let size = attributes[.fileSizeKey] as? NSNumber, size.int64Value == expected.size else {
+            throw PlayerError("This file has changed. Refresh its folder in Connections before deleting it.")
+        }
+    }
+
+    nonisolated static func removeFileWithSubtitles(_ manager: SMB2Manager, entry: BrowserEntry) async throws -> FileDeletionResult {
+        let current = try await attributes(manager, path: entry.path)
+        try Task.checkCancellation()
+        try validateDeletion(expected: entry, attributes: current)
+        // Discover from a fresh listing, not a filtered or stale browser snapshot.
+        // A listing failure aborts before any deletion.
+        let subtitles: [BrowserEntry]
+        if entry.playable {
+            let siblings = try await readDirectory(manager, path: (entry.path as NSString).deletingLastPathComponent)
+            subtitles = associatedSubtitles(for: entry, in: siblings)
+        } else { subtitles = [] }
+        return try await executeDeletion(path: entry.path, subtitles: subtitles) { path in
+            try await removeFile(manager, path: path)
+        }
+    }
+
+    nonisolated static func executeDeletion(path: String, subtitles: [BrowserEntry],
+        remove: @Sendable (String) async throws -> Void) async throws -> FileDeletionResult {
+        try Task.checkCancellation()
+        try await remove(path)
+        var result = FileDeletionResult(removedPaths: [path])
+        for subtitle in subtitles {
+            do {
+                try Task.checkCancellation()
+                try await remove(subtitle.path)
+                result.removedPaths.append(subtitle.path)
+            } catch {
+                // The video is already gone. Return that success even when
+                // some sidecars fail, so history and visible rows stay accurate.
+                result.failedSubtitleNames.append(subtitle.name)
+            }
+        }
+        return result
+    }
+
     nonisolated static func replacementSession(for manager: SMB2Manager) -> SMB2Manager? {
         // NSCopying retains connection settings/credentials, never the old socket or queue.
         manager.copy() as? SMB2Manager

@@ -48,6 +48,9 @@ import Foundation
         records[another.key]!["updated"] = 200
         defaults.set(records, forKey: "playbackPositions.v1")
         precondition(reopened.watching().map(\.id) == [another.key, key])
+        store.save(20, duration: 100, for: key)
+        precondition(reopened.watching().map(\.id) == [another.key, key])
+        precondition(reopened.watching().last?.lastSaved == 100)
         precondition(reopened.watching().last?.file?.name == "movie.mkv")
         // Metadata recovery must not change the existing last-save order or progress.
         store.remember(file)
@@ -63,6 +66,28 @@ import Foundation
         precondition(reopened.watching().isEmpty)
 
         let subtitle = SavedSubtitleSelection(kind: .external, filename: "movie.ass")
+        let unchangedKey = "unchanged-checkpoint"
+        store.save(40, duration: 100, for: unchangedKey, subtitle: subtitle)
+        var checkpointRecords = defaults.dictionary(forKey: "playbackPositions.v1") as! [String: [String: Double]]
+        checkpointRecords[unchangedKey]!["updated"] = 1
+        defaults.set(checkpointRecords, forKey: "playbackPositions.v1")
+        let before = defaults.persistentDomain(forName: suite)!
+        store.save(40, duration: 100, for: unchangedKey)
+        store.save(40, duration: 100, for: unchangedKey, subtitle: subtitle)
+        precondition((before as NSDictionary).isEqual(to: defaults.persistentDomain(forName: suite)!))
+        precondition(store.subtitleSelection(for: unchangedKey) == subtitle)
+        store.save(41, duration: 100, for: unchangedKey)
+        precondition(store.progress(for: unchangedKey)?.seconds == 41)
+        store.save(41, duration: 110, for: unchangedKey)
+        precondition(store.progress(for: unchangedKey)?.duration == 110)
+        let explicitOff = SavedSubtitleSelection(kind: .off)
+        store.save(41, duration: 110, for: unchangedKey, subtitle: explicitOff)
+        precondition(store.subtitleSelection(for: unchangedKey) == explicitOff)
+        defaults.set([unchangedKey: 2.0], forKey: "playbackResets.v1")
+        store.save(41, duration: 110, for: unchangedKey, subtitle: explicitOff)
+        precondition(defaults.dictionary(forKey: "playbackResets.v1")?[unchangedKey] == nil)
+        store.clear(unchangedKey)
+        print("PASS: unchanged checkpoints preserve stored state and Watching order; changed position/duration/subtitles and reset markers still persist")
         store.saveSubtitle(subtitle, for: key)
         precondition(store.subtitleSelection(for: key) == nil && store.progress(for: key) == nil)
         store.save(20, duration: 100, for: key, subtitle: subtitle)

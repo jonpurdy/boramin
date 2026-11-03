@@ -45,6 +45,10 @@ final class RemoteSession: @unchecked Sendable {
         guard let smb else { throw PlayerError("HTTP connections are read-only.") }
         try await SMBBrowsingService.removeFile(smb, path: path)
     }
+    func removeFileWithSubtitles(entry: BrowserEntry) async throws -> SMBBrowsingService.FileDeletionResult {
+        guard let smb else { throw PlayerError("HTTP connections are read-only.") }
+        return try await SMBBrowsingService.removeFileWithSubtitles(smb, entry: entry)
+    }
     func openFile(path: String, size: Int64, cancellation: CancellationFlag) async throws -> CachedRemoteFile {
         try Task.checkCancellation()
         if let smb { return CachedRemoteFile(client: smb, path: path, size: size, cancellation: cancellation) }

@@ -103,9 +103,24 @@ struct BrowserScreen: View {
                 .navigationTitle("BoraMin")
                 #endif
         }
+        #if os(tvOS)
+        .onReceive(NotificationCenter.default.publisher(for: .topShelfOpenItem)) { notification in
+            guard let url = notification.object as? URL else { return }
+            guard url.scheme == "boramin", url.host == "watching",
+                  let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "id" })?.value else { return }
+            watching = PlaybackPositions.shared.watching()
+            navigation = [.watching]
+            if let file = watching.first(where: { $0.id == id })?.file {
+                watchingBrowser.openWatching(file)
+            }
+        }
+        #endif
         .background(Color.black.ignoresSafeArea())
         .disabled(browser.busy)
         .task {
+            #if os(tvOS)
+            TopShelfPublisher.refresh()
+            #endif
             cloud.activate()
             filesBrowser.runSmokeTestIfRequested()
             if CommandLine.arguments.contains("--icloud-sync-check") {
@@ -118,6 +133,9 @@ struct BrowserScreen: View {
         .onReceive(NotificationCenter.default.publisher(for:ICloudSync.dataChanged)) { _ in
             favorites.reload()
             watching = PlaybackPositions.shared.watching()
+            #if os(tvOS)
+            TopShelfPublisher.refresh()
+            #endif
             filesBrowser.reloadSelectedConnection()
             favoriteBrowser.reloadSelectedConnection()
             filesBrowser.refreshProgress()
@@ -127,6 +145,9 @@ struct BrowserScreen: View {
                 .receive(on: RunLoop.main)) { _ in
                     favorites.reload()
                     watching = PlaybackPositions.shared.watching()
+                    #if os(tvOS)
+                    TopShelfPublisher.refresh()
+                    #endif
                     filesBrowser.refreshProgress()
                     favoriteBrowser.refreshProgress()
                 }
@@ -147,7 +168,7 @@ struct BrowserScreen: View {
             .alert("Delete File?", isPresented: Binding(get: { fileToDelete != nil }, set: { if !$0 { fileToDelete = nil } }), presenting: fileToDelete) { entry in
                 Button("Delete", role: .destructive) { browser.deleteFile(entry); fileToDelete = nil }
                 Button("Cancel", role: .cancel) { fileToDelete = nil }
-            } message: { entry in Text("Permanently delete \(entry.name) from the server? This cannot be undone.") }
+            } message: { entry in Text(entry.playable ? "Permanently delete \(entry.name) and its matching external subtitles from the server? Subtitles shared by another video are kept. This cannot be undone." : "Permanently delete \(entry.name) from the server? This cannot be undone.") }
             .fullScreenCover(item: Binding(get: { browser.playing }, set: { browser.playing = $0 }), onDismiss: { browser.playbackEnded() }) { media in
                 NativePlayer(media: media) { message in
                     browser.playing = nil
@@ -254,13 +275,13 @@ struct BrowserScreen: View {
                                     .contextMenu {
                                         if entry.directory { favoriteMenu(browser.favoriteLocation(path: entry.path)) }
                                         else {
-                                            if browser.canDeleteFiles { Button("Delete File…", systemImage: "trash", role: .destructive) { fileToDelete = entry } }
-                                        if entry.playable {
-                                            Button("Reset playback", systemImage: "arrow.counterclockwise") {
-                                                browser.resetPlayback(entry)
+                                            if entry.playable {
+                                                Button("Reset playback", systemImage: "arrow.counterclockwise") {
+                                                    browser.resetPlayback(entry)
+                                                }
+                                                .disabled(entry.progress == nil)
                                             }
-                                            .disabled(entry.progress == nil)
-                                        }
+                                            if browser.canDeleteFiles { Button("Delete File…", systemImage: "trash", role: .destructive) { fileToDelete = entry } }
                                         }
                                     }
                             }
@@ -322,6 +343,9 @@ struct BrowserScreen: View {
             }
             #endif
             Section {
+                #if os(tvOS)
+                Text("Subtitle Size")
+                #endif
                 SubtitleSizeSetting()
             } footer: {
                 Text("For external and ASS/SSA subtitles. Native captions use system settings. Saved on this device.").font(.body).foregroundStyle(.secondary)
@@ -393,15 +417,15 @@ struct BrowserScreen: View {
                     }
                     .disabled(video.file == nil)
                     .contextMenu {
+                        Button("Reset playback", systemImage: "arrow.counterclockwise") {
+                            PlaybackPositions.shared.clear(video.id)
+                            watching = PlaybackPositions.shared.watching()
+                        }
                         if let file = video.file {
                             if watchingBrowser.canDelete(file) {
                                 Button("Delete File…", systemImage: "trash", role: .destructive) { watchingFileToDelete = file }
                                     .disabled(watchingBrowser.busy)
                             }
-                        }
-                        Button("Reset playback", systemImage: "arrow.counterclockwise") {
-                            PlaybackPositions.shared.clear(video.id)
-                            watching = PlaybackPositions.shared.watching()
                         }
                     }
                 }
@@ -420,7 +444,7 @@ struct BrowserScreen: View {
                 watchingFileToDelete = nil
             }
             Button("Cancel", role: .cancel) { watchingFileToDelete = nil }
-        } message: { file in Text("Permanently delete \(file.name) from the server? This cannot be undone.") }
+        } message: { file in Text("Permanently delete \(file.name) and its matching external subtitles from the server? Subtitles shared by another video are kept. This cannot be undone.") }
         .onAppear { watching = PlaybackPositions.shared.watching() }
         .task {
             for location in favorites.locations {

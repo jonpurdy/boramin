@@ -57,9 +57,7 @@ private let externalSubtitleLog = Logger(subsystem: "com.example.BoraMin", categ
     private var appearanceSubscriptions = Set<AnyCancellable>()
 
     static func matches(videoName: String, subtitleName: String) -> Bool {
-        let ext = (subtitleName as NSString).pathExtension.lowercased()
-        return ["srt", "vtt", "ass", "ssa"].contains(ext) &&
-            (videoName as NSString).deletingPathExtension == (subtitleName as NSString).deletingPathExtension
+        ExternalSubtitleFiles.matches(videoName: videoName, subtitleName: subtitleName)
     }
 
     static func discover(session: RemoteSession, path: String, playbackCancellation: CancellationFlag) async -> ExternalSubtitles? {
@@ -69,10 +67,11 @@ private let externalSubtitleLog = Logger(subsystem: "com.example.BoraMin", categ
             let entries = try await session.readDirectory(path: folder)
             guard !playbackCancellation.cancelled, !Task.isCancelled else { return nil }
             let tracks: [Track] = entries.compactMap { entry in
-                guard !entry.directory, matches(videoName: name, subtitleName: entry.name) else { return nil }
+                guard !entry.directory,
+                      let match = ExternalSubtitleFiles.match(videoName: name, subtitleName: entry.name) else { return nil }
                 let size = entry.size, remotePath = entry.path
-                let ext = (entry.name as NSString).pathExtension.lowercased()
-                return Track(id: remotePath, name: "\(ext.uppercased()) — External", ext: ext) { cancellation in
+                let ext = match.ext
+                return Track(id: remotePath, name: match.menuName(), ext: ext) { cancellation in
                     guard size > 0, size <= ExternalSubtitleDecoder.maximumBytes else { throw PlayerError("The subtitle file is empty or exceeds 8 MiB.") }
                     if let client = session.smb {
                         // Preserve the SMB sidecar read, including its size-change check.

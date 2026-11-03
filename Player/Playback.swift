@@ -227,7 +227,7 @@ final class PreparedMedia: Identifiable {
                 defer { media_close(reader) }
                 let aetherContainer = info.vp9 == 0 && ext.lowercased() == "webm"
                 let demuxed = needsDemuxedPlayback(info, fileExtension: ext) && !aetherContainer
-                let format = demuxed && !(info.vp9 != 0 && CommandLine.arguments.contains("--experimental-vp9-remux")) ? try validateDecoder(info, configuration: configuration(reader)) : nil
+                let format = demuxed ? try validateDecoder(info, configuration: configuration(reader)) : nil
                 let keyframes = demuxed ? indexedKeyframes(reader) : []
                 return (info, keyframes, format)
             }.value
@@ -241,14 +241,10 @@ final class PreparedMedia: Identifiable {
             }
             if vp9MKV { playbackLog.notice("VP9 MKV using original hardware decoder and native AVKit controls") }
             let demuxed = needsDemuxedPlayback(info, fileExtension: ext)
-            let experimental = CommandLine.arguments.contains("--experimental-vp9-remux") && info.vp9 != 0
-            if experimental {
-                try transport.configureExperimentalRemux(info: info, keyframes: keyframes)
-                playbackLog.notice("BORAMIN_REMUX opt-in native HLS; decoder HW/SW unknown")
-            } else if demuxed { try transport.configureAudio(duration: info.duration) }
+            if demuxed { try transport.configureAudio(duration: info.duration) }
             playbackLog.notice("BORAMIN_STREAM ready; fetched \(source.fetchedBytes) of \(size) bytes before playback")
-            return Self(title: title, source: transport.sourceURL, timeline: experimental ? transport.experimentalRemuxURL : demuxed ? transport.audioURL : transport.sourceURL,
-                usesSampleBufferVideo: demuxed && !experimental, directory: directory, info: info, streaming: transport, keyframes: keyframes, positionKey: positionKey, videoFormat: format)
+            return Self(title: title, source: transport.sourceURL, timeline: demuxed ? transport.audioURL : transport.sourceURL,
+                usesSampleBufferVideo: demuxed, directory: directory, info: info, streaming: transport, keyframes: keyframes, positionKey: positionKey, videoFormat: format)
         } catch {
             let userCancelled = cancellation.cancelled
             transport.stop()
@@ -842,7 +838,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             item = AVPlayerItem(asset: loader.makeAsset())
             playbackLog.notice("Native remote-file resource loader enabled")
         } else { item = AVPlayerItem(url: media.timeline) }
-        if (CommandLine.arguments.contains("--exercise-remux-controls") || CommandLine.arguments.contains("--probe-frames-only") || CommandLine.arguments.contains("--exercise-remux-faults")) && !media.usesSampleBufferVideo {
+        if CommandLine.arguments.contains("--probe-frames-only") && !media.usesSampleBufferVideo {
             let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
             item.add(output); probeOutput = output
         }
@@ -975,16 +971,12 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                     self.player?.play()
                     if CommandLine.arguments.contains("--exercise-native-tracks") {
                         self.exercise = Task { @MainActor [weak self] in await self?.exerciseNativeTracks() }
-                    } else if CommandLine.arguments.contains("--exercise-remux-faults") {
-                        self.exercise = Task { @MainActor [weak self] in await self?.exerciseRemuxFaults() }
                     } else if CommandLine.arguments.contains("--probe-frames-only") {
                         self.exercise = Task { @MainActor [weak self] in
                             guard let self else { return }
                             do { try await self.probeFrame(target: self.player?.currentTime().seconds ?? 0, after: self.probeBegan, label: "open-resume") }
-                            catch { print("BORAMIN_REMUX_TEST FAILED \(error.localizedDescription)") }
+                            catch { print("BORAMIN_FRAME_PROBE FAILED \(error.localizedDescription)") }
                         }
-                    } else if CommandLine.arguments.contains("--exercise-remux-controls") {
-                        self.exercise = Task { @MainActor [weak self] in await self?.exerciseRemuxControls() }
                     } else if CommandLine.arguments.contains("--exercise-stream-controls") || CommandLine.arguments.contains("--exercise-mkv-controls") {
                         self.exercise = Task { @MainActor [weak self] in await self?.exerciseStreamingControls() }
                     } else if CommandLine.arguments.contains("--exercise-resume-completion") {
@@ -1350,14 +1342,14 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                 if let pixel = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: &display),
                    display.isNumeric, abs(display.seconds - time.seconds) < 0.15, display.seconds >= target - 0.15 {
                     let metrics = stream.source.transferMetrics
-                    print("BORAMIN_REMUX_TEST FRAME label=\(label) latency=\(ProcessInfo.processInfo.systemUptime - began) host=\(ProcessInfo.processInfo.systemUptime) clock=\(time.seconds) pts=\(display.seconds) size=\(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel)) fetched=\(metrics.fetched) cache=\(metrics.cached) resident=\(media_process_resident_bytes()) display=\(isReadyForDisplay)")
+                    print("BORAMIN_FRAME_PROBE FRAME label=\(label) latency=\(ProcessInfo.processInfo.systemUptime - began) host=\(ProcessInfo.processInfo.systemUptime) clock=\(time.seconds) pts=\(display.seconds) size=\(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel)) fetched=\(metrics.fetched) cache=\(metrics.cached) resident=\(media_process_resident_bytes()) display=\(isReadyForDisplay)")
                     NotificationCenter.default.post(name: Notification.Name("BoraMinProbeFrame"), object: media.id)
                     return
                 }
             } else if let video, time.seconds >= target - 0.15, video.queuedTime >= target {
                 player.pause()
                 if let pixel = video.layer.sampleBufferRenderer.displayedPixelBuffer() {
-                    print("BORAMIN_REMUX_TEST FRAME label=\(label) latencyUpperBound=\(ProcessInfo.processInfo.systemUptime - began) clock=\(time.seconds) size=\(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel)) fetched=\(stream.source.fetchedBytes) cache=\(stream.source.transferMetrics.cached) resident=\(media_process_resident_bytes()) baseline=true")
+                    print("BORAMIN_FRAME_PROBE FRAME label=\(label) latencyUpperBound=\(ProcessInfo.processInfo.systemUptime - began) clock=\(time.seconds) size=\(CVPixelBufferGetWidth(pixel))x\(CVPixelBufferGetHeight(pixel)) fetched=\(stream.source.fetchedBytes) cache=\(stream.source.transferMetrics.cached) resident=\(media_process_resident_bytes()) baseline=true")
                     NotificationCenter.default.post(name: Notification.Name("BoraMinProbeFrame"), object: media.id)
                     player.play(); return
                 }
@@ -1366,63 +1358,6 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             try await Task.sleep(for: .milliseconds(50))
         }
         throw PlayerError("No confirmed video at \(target) during \(label).")
-    }
-    private func exerciseRemuxFaults() async {
-        guard let player, let stream = media.streaming else { return }
-        do {
-            try await probeFrame(target: 0, after: probeBegan, label: "fault-startup")
-            stream.source.configureTestNetwork(delay: 0.15)
-            var began = ProcessInfo.processInfo.systemUptime
-            _ = await player.seek(to: CMTime(seconds: 90, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
-            player.play()
-            try await probeFrame(target: 90, after: began, label: "slow-SMB-150ms-per-256KiB")
-            stream.source.configureTestNetwork(unavailableFor: 4)
-            began = ProcessInfo.processInfo.systemUptime
-            print("BORAMIN_REMUX_TEST injecting four-second SMB read outage")
-            _ = await player.seek(to: CMTime(seconds: 125, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
-            player.play()
-            try await probeFrame(target: 125, after: began, label: "SMB-outage-recovery")
-            stream.source.configureTestNetwork()
-            print("BORAMIN_REMUX_TEST PASS injected network faults")
-        } catch is CancellationError { }
-        catch { stream.source.configureTestNetwork(); print("BORAMIN_REMUX_TEST FAULT_RESULT \(error.localizedDescription)") }
-    }
-    private func exerciseRemuxControls() async {
-        guard let player, let stream = media.streaming else { return }
-        do {
-            print("BORAMIN_REMUX_TEST os=\(UIDevice.current.systemVersion) model=\(UIDevice.current.model) native=\(!media.usesSampleBufferVideo)")
-            try await probeFrame(target: 0, after: probeBegan, label: "startup")
-            try await Task.sleep(for: .seconds(2))
-            player.pause()
-            let paused = player.currentTime().seconds, fetched = stream.source.fetchedBytes
-            try await Task.sleep(for: .seconds(2))
-            guard abs(player.currentTime().seconds - paused) < 0.1 else { throw PlayerError("Pause moved the clock.") }
-            print("BORAMIN_REMUX_TEST PAUSE extraBytes=\(stream.source.fetchedBytes - fetched)")
-            player.play()
-            let targets = CommandLine.arguments.contains("--test-native-file-loader") ? [6000.0, 20.0, 9000.0, 5.0, 125.0] : [125.0, 20.0, 90.0, 5.0, 125.0]
-            for requested in targets {
-                let target = media.usesSampleBufferVideo ? media.seekTime(requested) : requested
-                let began = ProcessInfo.processInfo.systemUptime
-                let success = await player.seek(to: CMTime(seconds: target, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
-                guard success else { throw PlayerError("Seek rejected.") }
-                player.play()
-                try await probeFrame(target: target, after: began, label: "seek-\(requested)")
-                let before = player.currentTime().seconds
-                try await Task.sleep(for: .seconds(2))
-                let continuationDeadline = ProcessInfo.processInfo.systemUptime + 15
-                while player.currentTime().seconds <= before + 1 && ProcessInfo.processInfo.systemUptime < continuationDeadline {
-                    try await Task.sleep(for: .milliseconds(100))
-                }
-                guard player.currentTime().seconds > before + 1 else { throw PlayerError("Video timeline stalled after seek.") }
-                try await probeFrame(target: before + 1, after: began, label: "continued-\(requested)")
-            }
-            let end = media.info.duration - 3
-            _ = await player.seek(to: CMTime(seconds: end, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
-            player.play()
-            try await probeFrame(target: end, after: ProcessInfo.processInfo.systemUptime, label: "near-end")
-            print("BORAMIN_REMUX_TEST PASS controls; waiting for native completion")
-        } catch is CancellationError { }
-        catch { print("BORAMIN_REMUX_TEST FAILED \(error.localizedDescription)") }
     }
     private func exerciseStreamingControls() async {
         guard let player, let stream = media.streaming else { return }

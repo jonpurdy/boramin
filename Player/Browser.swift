@@ -396,10 +396,13 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         guard !busy, playing == nil, !entry.directory, let session, session.canDelete,
               entries.contains(where: { $0.path == entry.path && !$0.directory }) else { return }
         perform("Deleting file…", invalidateConnectionOnFailure: false) { [self] in
-            try await session.removeFile(path: entry.path)
-            try Task.checkCancellation()
-            PlaybackPositions.shared.clear(PlaybackPositions.key(server: session.url, share: share, path: entry.path, size: entry.size))
-            entries.removeAll { $0.path == entry.path }
+            let deletedShare = share
+            let result = try await session.removeFileWithSubtitles(entry: entry)
+            PlaybackPositions.shared.clear(PlaybackPositions.key(server: session.url, share: deletedShare, path: entry.path, size: entry.size))
+            if self.session === session, share == deletedShare {
+                entries.removeAll { result.removedPaths.contains($0.path) }
+            }
+            try reportSubtitleDeletionFailures(result.failedSubtitleNames)
         }
     }
     func deleteWatchingFile(_ file: PlaybackFile, onDelete: @escaping () -> Void) {
@@ -413,18 +416,17 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
                     password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "") else { throw PlayerError("This video’s connection is unavailable. Check Connections in Settings.") }
             defer { Task { await manager.disconnect() } }
             try await manager.connectShare(name: file.share)
-            let attributes = try await manager.attributes(path: file.path)
-            try Task.checkCancellation()
-            guard !attributes.directory,
-                  attributes.size == file.size else {
-                throw PlayerError("This file has changed. Open its folder in Connections before deleting it.")
-            }
-            try await manager.removeFile(path: file.path)
-            try Task.checkCancellation()
+            let expected = BrowserEntry(name: file.name, path: file.path, directory: false, size: file.size)
+            let result = try await manager.removeFileWithSubtitles(entry: expected)
             PlaybackPositions.shared.clear(file.key)
             onDelete()
             NotificationCenter.default.post(name: Notification.Name("BoraMinPlaybackSync"), object: nil)
+            try reportSubtitleDeletionFailures(result.failedSubtitleNames)
         }
+    }
+    private func reportSubtitleDeletionFailures(_ names: [String]) throws {
+        guard !names.isEmpty else { return }
+        throw PlayerError("The video was deleted, but these associated subtitles could not be deleted: \(names.joined(separator: ", ")).")
     }
     func resetPlayback(_ entry: BrowserEntry) {
         guard !busy, playing == nil, entry.playable, let session else { return }

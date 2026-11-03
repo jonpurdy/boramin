@@ -147,7 +147,7 @@ import AMSMB2
         let vtt = Data("WEBVTT\n\n00:01.000 --> 00:05.000\n<b>WebVTT</b> subtitles\n\n00:10.000 --> 00:15.000\nLater cue\n".utf8)
         let ass = try Data(contentsOf: folder.appendingPathComponent("styled.ass"))
         try require(ExternalSubtitles.matches(videoName: "Movie.mp4", subtitleName: "Movie.SRT"), "Uppercase extension failed")
-        try require(!ExternalSubtitles.matches(videoName: "Movie.mp4", subtitleName: "Movie.en.srt"), "Language suffix must not match exact basename")
+        try require(ExternalSubtitles.matches(videoName: "Movie.mp4", subtitleName: "Movie.en.srt"), "Recognized language suffix did not match")
         try require(!ExternalSubtitles.matches(videoName: "Movie.mp4", subtitleName: "Other.ass"), "Unrelated subtitle matched")
         for (ext, data) in [("srt", srt), ("vtt", vtt), ("ass", ass), ("ssa", ass)] {
             let document = try await Task.detached { try ExternalSubtitleDecoder.decode(data, extension: ext, cancellation: CancellationFlag()) }.value

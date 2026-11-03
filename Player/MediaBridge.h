@@ -39,12 +39,6 @@ MediaPCMReader *media_pcm_open(MediaIO io, double duration, char *error, size_t 
 int media_pcm_read(MediaPCMReader *reader, int64_t first_frame, int frames, uint8_t *output);
 void media_pcm_close(MediaPCMReader *reader);
 int64_t media_caf_header(double duration, uint8_t *header);
-// Experimental VP9/AAC fMP4 segment copy. Caller owns returned av_malloc buffer.
-// Bounded to 32 MiB; independently seeks to the requested source keyframe.
-int media_remux_fragment(MediaReader *reader, const MediaInfo *info, double start, double end,
-                         int sequence, uint8_t **bytes, int *count, int *init_count, char *error, size_t capacity);
-void media_remux_free(uint8_t *bytes);
-
 uint64_t media_process_resident_bytes(void);
 
 // Cumulative app CPU time, or -1 when unavailable.

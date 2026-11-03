@@ -24,15 +24,6 @@ final class CachedRemoteFile: @unchecked Sendable {
     private var recent: [Int64] = []
     private var fetched: Int64 = 0
     private var residentBytes: Int64 = 0
-    private var testDelay = 0.0
-    private var testUnavailableUntil = 0.0
-    func configureTestNetwork(delay: Double = 0, unavailableFor: Double = 0) {
-        guard CommandLine.arguments.contains("--exercise-remux-faults") else { return }
-        metricsLock.lock(); defer { metricsLock.unlock() }
-        testDelay = min(0.25, max(0, delay))
-        testUnavailableUntil = ProcessInfo.processInfo.systemUptime + max(0, unavailableFor)
-    }
-
     init(size: Int64, cancellation: CancellationFlag, fetch: @escaping Fetch) {
         self.fetch = fetch; self.size = size; self.cancellation = cancellation
         // Shared default for all streaming formats on iOS and tvOS; test flags can override it.
@@ -96,9 +87,6 @@ final class CachedRemoteFile: @unchecked Sendable {
             data = cached
             if diagnostics { metricsLock.lock(); cacheHits += 1; metricsLock.unlock() }
         } else {
-            metricsLock.lock(); let delay = testDelay, unavailable = testUnavailableUntil; metricsLock.unlock()
-            if delay > 0 { Thread.sleep(forTimeInterval: delay) }
-            if ProcessInfo.processInfo.systemUptime < unavailable { throw PlayerError("Injected temporary SMB read failure.") }
             let end = min(size, start + blockSize)
             let semaphore = DispatchSemaphore(value: 0)
             let result = RemoteReadResult()
@@ -270,7 +258,6 @@ final class StreamingSession: @unchecked Sendable {
         return nil
         #endif
     }
-    private var experimentalRemux: ExperimentalRemux?
     private let stopLock = NSLock()
     private var stopped = false
 
@@ -283,7 +270,6 @@ final class StreamingSession: @unchecked Sendable {
     }
     var sourceURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/source.\(ext)")! }
     var audioURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/audio.caf")! }
-    var experimentalRemuxURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/remux/index.m3u8")! }
     @MainActor func configureAetherPlayback() async throws -> URL {
         #if canImport(AetherEngine)
         let playback = try await AetherMKVPlayback.open(source: source, fileExtension: ext)
@@ -294,9 +280,6 @@ final class StreamingSession: @unchecked Sendable {
         #else
         throw PlayerError("AetherEngine is not linked in this test harness.")
         #endif
-    }
-    func configureExperimentalRemux(info: MediaInfo, keyframes: [Double]) throws {
-        experimentalRemux = try ExperimentalRemux(source: source, info: info, keyframes: keyframes)
     }
     func configureAudio(duration: Double) throws {
         let audio = try StreamingAudio(source: source, duration: duration)
@@ -373,7 +356,6 @@ final class StreamingSession: @unchecked Sendable {
         #if canImport(AetherEngine)
         Task { @MainActor [self] in externalSubtitles?.stop(); externalSubtitles = nil; aetherPlayback?.stop(); aetherPlayback = nil }
         #endif
-        experimentalRemux?.stop()
         audioLock.lock(); let audio = audio; audioLock.unlock(); audio?.stop()
         queue.async { [self] in
             listener.cancel()
@@ -383,7 +365,6 @@ final class StreamingSession: @unchecked Sendable {
         }
     }
     private func accept(_ connection: NWConnection) {
-        if experimentalRemux != nil && connections.count >= 4 { connection.cancel(); return }
         let id = ObjectIdentifier(connection)
         connections[id] = connection
         connection.stateUpdateHandler = { [weak self] state in
@@ -426,27 +407,6 @@ final class StreamingSession: @unchecked Sendable {
         let first = lines[0].split(separator: " ")
         guard first.count == 3, first[0] == "GET" || first[0] == "HEAD" else { return }
         let path = String(first[1])
-        if path.hasPrefix("/\(token)/remux/"), let remux = experimentalRemux {
-            do {
-                let (data, type) = try await remux.resource(String(path.dropFirst("/\(token)/remux/".count)))
-                let rangeHeader = lines.dropFirst().first { $0.lowercased().hasPrefix("range:") }.map { String($0.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
-                let range = try HTTPByteRange.parse(rangeHeader, length: Int64(data.count))
-                var header = "HTTP/1.1 \(rangeHeader == nil ? "200 OK" : "206 Partial Content")\r\nContent-Type: \(type)\r\nContent-Length: \(range.end - range.start)\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\nConnection: close\r\n"
-                if rangeHeader != nil { header += "Content-Range: bytes \(range.start)-\(range.end - 1)/\(data.count)\r\n" }
-                try await send(Data((header + "\r\n").utf8), to: connection)
-                if first[0] == "GET" {
-                    var offset = Int(range.start)
-                    while offset < Int(range.end) {
-                        let end = min(offset + 65536, Int(range.end))
-                        try await send(data.subdata(in: offset..<end), to: connection); offset = end
-                    }
-                }
-            } catch {
-                streamingLog.error("BORAMIN_REMUX HTTP_ERROR \(error.localizedDescription)")
-                try? await send(Data("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8), to: connection)
-            }
-            return
-        }
         let audio = currentAudio()
         let isAudio = path == "/\(token)/audio.caf"
         if isAudio { await registerAudio(connection) }
@@ -498,94 +458,4 @@ final class StreamingSession: @unchecked Sendable {
             queue.async { [self] in audioConnections.insert(ObjectIdentifier(connection)); continuation.resume() }
         }
     }
-}
-
-/// Launch-flag-only experiment: independent VP9/AAC fragments generated on demand.
-/// A serial queue owns the demuxer and a two-fragment LRU (at most 64 MiB).
-final class ExperimentalRemux: @unchecked Sendable {
-    private let source: CachedRemoteFile
-    private let queue = DispatchQueue(label: "BoraMin.experimental-remux")
-    private var reader: OpaquePointer?
-    private var info: MediaInfo
-    private let boundaries: [Double]
-    private var initialization: Data?
-    private var fragments: [Int: Data] = [:]
-    private var recent: [Int] = []
-    private var stopped = false
-    let playlist: Data
-
-    init(source: CachedRemoteFile, info: MediaInfo, keyframes: [Double]) throws {
-        guard info.vp9 != 0, info.duration.isFinite, info.duration > 0,
-              keyframes.count >= 2, keyframes.count <= 100_000,
-              let first = keyframes.first, first < 0.1 else {
-            throw PlayerError("Experimental remux needs an indexed VP9 file starting near zero.")
-        }
-        self.source = source; self.info = info
-        boundaries = [0] + keyframes.dropFirst().filter { $0 < info.duration } + [info.duration]
-        let durations = zip(boundaries, boundaries.dropFirst()).map { $1 - $0 }
-        guard durations.allSatisfy({ $0 > 0 && $0 <= 30 }) else {
-            throw PlayerError("Experimental remux requires keyframe intervals under 30 seconds.")
-        }
-        var lines = ["#EXTM3U", "#EXT-X-VERSION:7", "#EXT-X-TARGETDURATION:\(Int(ceil(durations.max()!)))",
-                     "#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-MAP:URI=\"init.mp4\""]
-        for (index, duration) in durations.enumerated() {
-            lines += [String(format: "#EXTINF:%.6f,", locale: Locale(identifier: "en_US_POSIX"), duration), "segment\(index).m4s"]
-        }
-        lines.append("#EXT-X-ENDLIST")
-        playlist = Data((lines.joined(separator: "\n") + "\n").utf8)
-    }
-    func resource(_ name: String) async throws -> (Data, String) {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
-                do {
-                    guard !stopped, !source.cancellation.cancelled else { throw CancellationError() }
-                    if name == "index.m3u8" { continuation.resume(returning: (playlist, "application/vnd.apple.mpegurl")); return }
-                    if name == "init.mp4" {
-                        if initialization == nil { _ = try fragment(0) }
-                        continuation.resume(returning: (initialization!, "video/mp4")); return
-                    }
-                    guard name.hasPrefix("segment"), name.hasSuffix(".m4s"),
-                          let index = Int(name.dropFirst(7).dropLast(4)), index >= 0, index < boundaries.count - 1 else {
-                        throw PlayerError("Unknown experimental remux resource.")
-                    }
-                    continuation.resume(returning: (try fragment(index), "video/mp4"))
-                } catch { continuation.resume(throwing: error) }
-            }
-        }
-    }
-    private func fragment(_ index: Int) throws -> Data {
-        if let data = fragments[index] {
-            recent.removeAll { $0 == index }; recent.append(index); return data
-        }
-        var error = [CChar](repeating: 0, count: 512)
-        if reader == nil {
-            reader = media_open_io(source.makeIO(), &info, &error, error.count)
-            guard reader != nil else { throw PlayerError("Experimental remux open: \(String(cString: error))") }
-        }
-        let began = ProcessInfo.processInfo.systemUptime, before = source.fetchedBytes
-        var bytes: UnsafeMutablePointer<UInt8>?, count: Int32 = 0, initCount: Int32 = 0
-        let status = media_remux_fragment(reader, &info, boundaries[index], boundaries[index + 1], Int32(index + 1),
-                                         &bytes, &count, &initCount, &error, error.count)
-        defer { if let bytes { media_remux_free(bytes) } }
-        guard status == 0, let bytes, initCount > 0, initCount < count, initCount < 4 * 1024 * 1024 else {
-            if let reader { media_close(reader); self.reader = nil }
-            throw PlayerError("Experimental remux fragment: \(String(cString: error))")
-        }
-        let header = Data(bytes: bytes, count: Int(initCount))
-        if let initialization, initialization != header { throw PlayerError("Experimental remux initialization changed between segments.") }
-        initialization = header
-        let data = Data(bytes: bytes.advanced(by: Int(initCount)), count: Int(count - initCount))
-        while recent.count >= 2 { fragments.removeValue(forKey: recent.removeFirst()) }
-        fragments[index] = data; recent.append(index)
-        streamingLog.info("BORAMIN_REMUX segment=\(index) start=\(self.boundaries[index]) end=\(self.boundaries[index + 1]) bytes=\(data.count) elapsed=\(ProcessInfo.processInfo.systemUptime - began) fetched=\(self.source.fetchedBytes - before) retained=\(self.fragments.values.reduce(0) { $0 + $1.count })")
-        return data
-    }
-    func stop() {
-        queue.async { [self] in
-            stopped = true
-            if let reader { media_close(reader); self.reader = nil }
-            fragments.removeAll(); recent.removeAll(); initialization = nil
-        }
-    }
-    deinit { if let reader { media_close(reader) } }
 }

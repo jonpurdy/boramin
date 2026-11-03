@@ -1,12 +1,14 @@
 # Opt-in native VP9 streaming remux — 2026-10-22
 
+> **Retired November 3, 2026.** The opt-in VP9 remux implementation, its HLS resource handler/C fragment muxer, remux-specific playback exercises, network fault injection, and `RemuxTests.c` / `test_streaming_remux.py` were removed. Normal VP9 hardware playback, cache locking, AetherEngine routing and general frame/lifecycle probes remain. Everything below records the historical experiment; its app launch flags and removed test commands are no longer supported. The separate `NativeVP9Probe.swift` investigation remains available.
+
 ## Decision
 
 Keep the existing production default. The prototype demonstrates SMB → on-demand fMP4 → native AVPlayer video playback without transcoding or processing the entire source first. It is promising, but currently **not comparable in seeking efficiency** to the production pipeline. It also depends on VP9 HLS behavior demonstrated on OS 27.0 rather than an Apple guarantee for the original deployment targets.
 
 The subsequent [GMPlayer source review](#gmplayer-source-review--2026-10-22) identifies concrete follow-up experiments, not new device results: correct HDR master declarations, test native HLS buffer defaults, and expose separate audio/WebVTT renditions. GMPlayer excludes VP9 from its codec policy, so it does not independently establish VP9 compatibility.
 
-Nothing enables it in normal launches. `--experimental-vp9-remux` opts in for VP9 SMB streams only. No settings toggle, preference migration, private API, custom gesture, custom video renderer, or default-policy change was added. Other formats continue along their existing paths.
+During the experiment, nothing enabled it in normal launches. `--experimental-vp9-remux` opted in for VP9 SMB streams only. No settings toggle, preference migration, private API, custom gesture, custom video renderer, or default-policy change was added. Other formats continue along their existing paths.
 
 ## Compatibility gate
 

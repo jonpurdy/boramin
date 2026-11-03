@@ -8,15 +8,18 @@ final class BoraMinAppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
     func applicationDidBecomeActive(_ application: UIApplication) {
+        TopShelfPublisher.refresh(force: true)
         ICloudSync.shared.schedule(delay:0,urgent:true)
     }
     func applicationDidEnterBackground(_ application: UIApplication) {
+        TopShelfPublisher.refresh()
         guard ICloudSync.shared.enabled, backgroundTask == .invalid else { return }
         backgroundTask=application.beginBackgroundTask(withName:"iCloud Sync") { [weak self] in
             self?.finishBackgroundTask(application)
         }
         Task { @MainActor in
             await ICloudSync.shared.synchronize()
+            TopShelfPublisher.refresh()
             finishBackgroundTask(application)
         }
     }
@@ -26,6 +29,7 @@ final class BoraMinAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,didReceiveRemoteNotification userInfo:[AnyHashable:Any],fetchCompletionHandler completionHandler:@escaping(UIBackgroundFetchResult)->Void) {
         Task { @MainActor in
             await ICloudSync.shared.synchronize()
+            TopShelfPublisher.refresh()
             completionHandler(.newData)
         }
     }
@@ -42,7 +46,14 @@ final class BoraMinAppDelegate: NSObject, UIApplicationDelegate {
         UICollectionView.appearance(whenContainedInInstancesOf: [UIHostingController<BrowserScreen>.self]).backgroundColor = .black
         _ = VP9Support.registered
     }
-    var body: some Scene { WindowGroup { BrowserHost().ignoresSafeArea() } }
+    var body: some Scene {
+        WindowGroup {
+            BrowserHost().ignoresSafeArea()
+                .onOpenURL { url in
+                    NotificationCenter.default.post(name: .topShelfOpenItem, object: url)
+                }
+        }
+    }
 }
 
 // Public SwiftUI/UIKit containment gives UIAppearance a browser-only scope.

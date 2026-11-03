@@ -1,8 +1,10 @@
 # External subtitles
 
-SMB playback discovers `.srt`, `.vtt`, `.ass`, and `.ssa` files in the video's folder with the **identical base filename**. Extensions are case-insensitive. For example, `Movie.mp4` matches `Movie.srt` and `Movie.ASS`, but not `Movie.en.srt` or `Another Movie.srt`. Matching is independent of the browser's Display all files setting.
+SMB and HTTP(S) playback discover `.srt`, `.vtt`, `.ass`, and `.ssa` files in the video's folder with the **exact video base filename**, optionally followed by a dot and a recognized language tag. Extensions and language tags are case-insensitive; the video base filename remains case-sensitive. For example, `Movie.mp4` matches `Movie.srt`, `Movie.ASS`, `Movie.en.srt`, `Movie.eng.srt`, `Movie.en-US.srt` and `Movie.zh-Hans-CN.srt`, but not `Another Movie.srt` or `Movie.commentary.srt`. Matching is independent of the browser's Display all files setting.
 
-Matching tracks appear as **SRT — External**, **VTT — External**, etc. in **Audio & Subtitles**, alongside embedded subtitle options and Off. Discovery does not automatically enable subtitles. Selecting an external track loads only that subtitle file; the video is still streamed through its original playback route. The source files are unchanged.
+Tags use Foundation's known two-/three-letter language codes, optionally followed by a recognized four-letter script and/or two-letter or three-digit region, separated by hyphens. Unknown codes, malformed tags, underscore separators and qualifiers such as `.en.forced` / `.en.sdh` are not matched. SMB deletion uses the same matcher and preserves any subtitle also associated with another supported video, including overlapping names such as `Movie.en.mkv` sharing `Movie.en.srt` with `Movie.mkv`.
+
+Matching tracks appear as **SRT — External**, **VTT — External**, etc.; language-tagged tracks include a localized language label, such as **English — SRT — External** or **Portuguese (Brazil) — SRT — External**. in **Audio & Subtitles**, alongside embedded subtitle options and Off. Discovery does not automatically enable subtitles. Selecting an external track loads only that subtitle file; the video is still streamed through its original playback route. The source files are unchanged.
 
 ## Rendering and selection
 

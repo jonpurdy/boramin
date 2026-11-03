@@ -68,7 +68,7 @@ def file_ref(path, kind=None):
     return obj('file:'+rel, 'PBXFileReference', lastKnownFileType=kind, path=rel, sourceTree='SOURCE_ROOT')
 
 common = sorted([*root.glob('Shared/*.swift'), *[p for p in root.glob('Player/*') if p.suffix in ('.swift', '.c', '.h') and p.name != 'BoraMinApp.swift']])
-all_files = sorted(set(common + list(root.glob('iOS/*.swift')) + list(root.glob('MacOS/*.swift')) + [root/'Player/BoraMinApp.swift']))
+all_files = sorted(set([root/'TopShelf/TopShelfSnapshot.swift'] + common + list(root.glob('iOS/*.swift')) + list(root.glob('MacOS/*.swift')) + [root/'Player/BoraMinApp.swift']))
 if args.include_cloud_probe:
     all_files += [root/'Tests/CloudSyncProbe.swift', root/'Tests/CloudSyncProbeScreen.swift']
 for path in all_files:
@@ -92,6 +92,8 @@ for platform, spec in platforms.items():
     sources = common + sorted(root.glob(spec['folder']+'/*.swift')) if platform != 'tvos' else common + [root/'Player/BoraMinApp.swift']
     if platform == 'ios' and args.include_cloud_probe:
         sources += [root/'Tests/CloudSyncProbe.swift', root/'Tests/CloudSyncProbeScreen.swift']
+    if platform == 'tvos':
+        sources += [root/'TopShelf/TopShelfSnapshot.swift']
     # Keep the legacy FFmpeg implementation private to this framework. Otherwise
     # its static symbols in the app override AetherEngine's dynamic FFmpeg.
     media_product = obj(platform+':mediaapp', 'PBXFileReference', explicitFileType='wrapper.framework', path='BoraMinMedia.framework', sourceTree='BUILT_PRODUCTS_DIR')
@@ -124,7 +126,7 @@ for platform, spec in platforms.items():
     obj(platform+':resources', 'PBXResourcesBuildPhase', buildActionMask=2147483647, files=resources, runOnlyForDeploymentPostprocessing=0)
     targets.append(obj(platform+':target', 'PBXNativeTarget', buildConfigurationList=ident(platform+':configs'), buildPhases=[ident(platform+':'+phase) for phase in ('sources', 'frameworks', 'resources', 'embed')], buildRules=[], dependencies=[media_dependency], name=name, productName='BoraMin', productReference=product, productType='com.apple.product-type.application', packageProductDependencies=[ident(platform+':smb'), ident(platform+':aether'), ident(platform+':ass')]))
     for config in ('Debug', 'Release'):
-        settings = dict(SDKROOT=spec['sdk'], SUPPORTED_PLATFORMS=spec['sdk'], PRODUCT_NAME='BoraMin', PRODUCT_MODULE_NAME='BoraMin_'+platform, PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID, DEVELOPMENT_TEAM='EXAMPLE000', CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS=spec['entitlements'], GENERATE_INFOPLIST_FILE='YES', INFOPLIST_FILE=spec['info'], MARKETING_VERSION='0.5.2', CURRENT_PROJECT_VERSION='7', ASSETCATALOG_COMPILER_APPICON_NAME=spec['icon_name'], SWIFT_OBJC_BRIDGING_HEADER='Player/Player-Bridging-Header.h', HEADER_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/include'], LIBRARY_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/lib'], OTHER_LDFLAGS=['-lavformat', '-lavcodec', '-lswresample', '-lavutil', '-framework', 'AudioToolbox', '-framework', 'CoreMedia', '-framework', 'VideoToolbox', '-lz', '-lbz2', '-liconv'])
+        settings = dict(SDKROOT=spec['sdk'], SUPPORTED_PLATFORMS=spec['sdk'], PRODUCT_NAME='BoraMin', PRODUCT_MODULE_NAME='BoraMin_'+platform, PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID, DEVELOPMENT_TEAM='EXAMPLE000', CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS=spec['entitlements'], GENERATE_INFOPLIST_FILE='YES', INFOPLIST_FILE=spec['info'], MARKETING_VERSION='0.5.3', CURRENT_PROJECT_VERSION='8', ASSETCATALOG_COMPILER_APPICON_NAME=spec['icon_name'], SWIFT_OBJC_BRIDGING_HEADER='Player/Player-Bridging-Header.h', HEADER_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/include'], LIBRARY_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/lib'], OTHER_LDFLAGS=['-lavformat', '-lavcodec', '-lswresample', '-lavutil', '-framework', 'AudioToolbox', '-framework', 'CoreMedia', '-framework', 'VideoToolbox', '-lz', '-lbz2', '-liconv'])
         settings[spec['deployment'][0]] = spec['deployment'][1]
         if platform == 'tvos':
             settings['SUPPORTED_PLATFORMS'] = 'appletvos appletvsimulator'
@@ -154,9 +156,28 @@ for platform, spec in platforms.items():
     obj(platform+':mediaconfigs', 'XCConfigurationList', buildConfigurations=[ident(platform+':media'+c) for c in ('Debug', 'Release')], defaultConfigurationIsVisible=0, defaultConfigurationName='Release')
     obj(platform+':configs', 'XCConfigurationList', buildConfigurations=[ident(platform+':'+c) for c in ('Debug', 'Release')], defaultConfigurationIsVisible=0, defaultConfigurationName='Release')
 
+# Native tvOS Top Shelf extension, embedded only in the tvOS app.
+for path in (root/'TopShelf').glob('*'):
+    file_ref(path)
+ext_product = obj('topshelf:product', 'PBXFileReference', explicitFileType='wrapper.app-extension', path='BoraMinTopShelf.appex', sourceTree='BUILT_PRODUCTS_DIR')
+products.append(ext_product)
+ext_sources = [obj('topshelf:build:'+name, 'PBXBuildFile', fileRef=ident('file:TopShelf/'+name)) for name in ('ContentProvider.swift', 'TopShelfSnapshot.swift')]
+obj('topshelf:sources', 'PBXSourcesBuildPhase', buildActionMask=2147483647, files=ext_sources, runOnlyForDeploymentPostprocessing=0)
+ext_target = obj('topshelf:target', 'PBXNativeTarget', buildConfigurationList=ident('topshelf:configs'), buildPhases=[ident('topshelf:sources')], buildRules=[], dependencies=[], name='BoraMin Top Shelf', productName='BoraMinTopShelf', productReference=ext_product, productType='com.apple.product-type.app-extension')
+targets.append(ext_target)
+for config in ('Debug', 'Release'):
+    version = previous.get(('tvos', config), {})
+    settings = dict(SDKROOT='appletvos', SUPPORTED_PLATFORMS='appletvos appletvsimulator', TVOS_DEPLOYMENT_TARGET='26.2', TARGETED_DEVICE_FAMILY='3', PRODUCT_NAME='BoraMinTopShelf', PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID+'.TopShelf', DEVELOPMENT_TEAM=version.get('DEVELOPMENT_TEAM', 'EXAMPLE000'), CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS='TopShelf/TopShelf.entitlements', INFOPLIST_FILE='TopShelf/Info.plist', GENERATE_INFOPLIST_FILE='YES', APPLICATION_EXTENSION_API_ONLY='YES', SKIP_INSTALL='YES', MARKETING_VERSION=version.get('MARKETING_VERSION', '0.5.3'), CURRENT_PROJECT_VERSION=version.get('CURRENT_PROJECT_VERSION', '8'))
+    obj('topshelf:'+config, 'XCBuildConfiguration', buildSettings=settings, name=config)
+obj('topshelf:configs', 'XCConfigurationList', buildConfigurations=[ident('topshelf:'+c) for c in ('Debug', 'Release')], defaultConfigurationIsVisible=0, defaultConfigurationName='Release')
+embed = obj('topshelf:embedfile', 'PBXBuildFile', fileRef=ext_product, settings={'ATTRIBUTES': ['RemoveHeadersOnCopy']})
+phase = obj('topshelf:embed', 'PBXCopyFilesBuildPhase', buildActionMask=2147483647, dstPath='', dstSubfolderSpec=13, files=[embed], name='Embed App Extensions', runOnlyForDeploymentPostprocessing=0)
+objects[ident('tvos:target')]['buildPhases'].append(phase)
+objects[ident('tvos:target')]['dependencies'].append(obj('topshelf:dependency', 'PBXTargetDependency', target=ext_target))
+
 # Logical groups keep shared code visible once while target membership stays explicit.
 groups = []
-for folder in ('Player', 'Shared', 'iOS', 'MacOS', 'Config', 'Assets', 'Tests'):
+for folder in ('Player', 'Shared', 'iOS', 'MacOS', 'Config', 'Assets', 'Tests', 'TopShelf'):
     children = [key for key, value in objects.items() if value['isa'] == 'PBXFileReference' and value.get('sourceTree') == 'SOURCE_ROOT' and value['path'].startswith(folder+'/')]
     if children:
         groups.append(obj('group:'+folder, 'PBXGroup', name=folder, sourceTree='<group>', children=children))

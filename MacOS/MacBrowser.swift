@@ -117,7 +117,7 @@ struct MacLibraryView: View {
                 watchingFileToDelete = nil
             }
             Button("Cancel", role: .cancel) { watchingFileToDelete = nil }
-        } message: { file in Text("Permanently delete \(file.name) from the server? This cannot be undone.") }
+        } message: { file in Text("Permanently delete \(file.name) and its matching external subtitles from the server? Subtitles shared by another video are kept. This cannot be undone.") }
     }
     private func openFavorite(_ item: FavoriteLocation) {
         let browser = library.favoritesBrowser
@@ -199,7 +199,7 @@ private struct MacFilesView: View {
         .alert("Delete File?", isPresented: Binding(get: { fileToDelete != nil }, set: { if !$0 { fileToDelete = nil } }), presenting: fileToDelete) { entry in
             Button("Delete", role: .destructive) { browser.deleteFile(entry); fileToDelete = nil; selection.remove(entry.id) }
             Button("Cancel", role: .cancel) { fileToDelete = nil }
-        } message: { entry in Text("Permanently delete \(entry.name) from the server? This cannot be undone.") }
+        } message: { entry in Text(entry.playable ? "Permanently delete \(entry.name) and its matching external subtitles from the server? Subtitles shared by another video are kept. This cannot be undone." : "Permanently delete \(entry.name) from the server? This cannot be undone.") }
         .navigationTitle(browser.isShareListing ? "Connections" : browser.folderTitle)
         .navigationSubtitle(browser.isShareListing ? "SMB Shares" : (browser.share.isEmpty ? browser.path : "\(browser.share)/\(browser.path)"))
         .toolbar {

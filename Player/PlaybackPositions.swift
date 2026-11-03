@@ -95,17 +95,25 @@ struct PlaybackProgress {
         guard seconds.isFinite, duration.isFinite, duration > 0, seconds >= 0 else { return }
         guard seconds > 0, seconds < duration else { clear(key); return }
         var records = defaults.dictionary(forKey: storageKey) as? [String: [String: Double]] ?? [:]
+        var subtitles = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
+        var resets = defaults.dictionary(forKey: "playbackResets.v1") as? [String: Double] ?? [:]
+        let encodedSubtitle = subtitle?.encoded
+        // A nil subtitle preserves the saved choice. An unchanged checkpoint
+        // must not bump Watching order or trigger persistence/cloud work, but
+        // a new save must still supersede an existing reset marker.
+        if records[key]?["seconds"] == seconds, records[key]?["duration"] == duration,
+           encodedSubtitle == nil || subtitles[key] == encodedSubtitle, resets[key] == nil {
+            return
+        }
         records[key] = ["seconds": seconds, "duration": duration, "updated": Date().timeIntervalSince1970]
         if records.count > limit {
             let oldest = records.keys.sorted { (records[$0]?["updated"] ?? 0) < (records[$1]?["updated"] ?? 0) }
             for key in oldest.prefix(records.count - limit) { records.removeValue(forKey: key) }
         }
         defaults.set(records, forKey: storageKey)
-        var subtitles = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
-        if let encoded = subtitle?.encoded { subtitles[key] = encoded }
+        if let encodedSubtitle { subtitles[key] = encodedSubtitle }
         subtitles = subtitles.filter { records[$0.key] != nil }
         defaults.set(subtitles, forKey: Self.subtitleStorageKey)
-        var resets=defaults.dictionary(forKey:"playbackResets.v1") as? [String:Double] ?? [:]
         if resets.removeValue(forKey:key) != nil { defaults.set(resets,forKey:"playbackResets.v1") }
     }
 
