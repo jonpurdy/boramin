@@ -10,6 +10,8 @@ A native SMB and HTTP(S) video player for Apple TV, iPhone/iPad, and Mac. Stream
 
 All three targets live in **BoraMin.xcodeproj** and use `com.example.BoraMin`. Builds support physical arm64 devices and an arm64 tvOS Simulator. iOS Simulator and Intel Mac builds are not configured.
 
+Shared browsing, playback, and iOS/tvOS screens live in `Player/`; iCloud code lives in `Shared/`. Platform app entry points and configuration live in `iOS/`, `tvOS/`, and `MacOS/`. The tvOS Top Shelf extension is in `tvOS/TopShelf/`; its snapshot type is compiled into both the tvOS app and extension.
+
 ## Features
 
 - **Connections:** choose a saved connection, then browse its SMB shares/folders or HTTP base directory. Connections open on demand and reconnect for browsing when needed. Files and folders sort alphabetically together; dotfiles are hidden.
@@ -35,6 +37,8 @@ The base URL is the browsing root. Folder navigation, favorites, Watching/resume
 
 Before opening a remote file, BoraMin requests one byte and requires `206 Partial Content` with the correct `Content-Range` and total size. Every subsequent bounded range is validated, including its length and available ETag/Last-Modified identity. Incorrect/ignored ranges, encoded responses, changed files, and early termination fail; no whole-video GET or download fallback is used. Redirects must remain on the same origin and within the configured base path. HTTP media bypasses URLCache and uses the existing 128 MiB in-memory compressed cache.
 
+iOS browsing, Settings and connection forms follow the device’s Light/Dark appearance with system backgrounds and native control colors. Playback retains a black background and dark controls.
+
 ## Playback
 
 - **MP4 / M4V / MOV:** native AVPlayer playback through the shared remote-file resource loader, except VP9 files using the separate decoder path below.
@@ -49,7 +53,16 @@ On iOS/tvOS, backgrounding AetherEngine playback saves progress and closes the p
 
 On iOS, filenames in file browsing and Watching wrap fully without truncation. On tvOS, filenames truncate to one line with an ellipsis; keeping a row focused for one second wraps the full filename and expands the row. The tvOS-only **Expand filename immediately in list views** setting restores immediate expansion; it is off by default and saved on the device. Filenames do not scroll horizontally.
 
-On Apple TV, put BoraMin in the Home screen’s top row to see **Watching** in Top Shelf. Items use the same most-recently-saved order as the Watching screen, with standard square tiles showing the SF Symbol `film` and filenames beneath. Selecting a tile opens the existing Watching resume flow. The app refreshes the shelf after local or iCloud bookmark changes and when leaving the app; tvOS controls when the refreshed shelf appears. Open BoraMin once after installation to publish the initial list. Only names and opaque bookmark IDs are shared with the extension, in the shared group’s purgeable `Library/Caches/TopShelf` directory. Foregrounding the app recreates a missing snapshot and requests a shelf refresh. Film artwork is cached there at both standard 1× and 2× scales.
+**OLED Mode** in tvOS Settings dims the main screen and list screens—including titles, icons and focus appearance—with a 50% black overlay after ten idle seconds. Focus movement, selection or navigation restores brightness and restarts the timer. The setting is local to the device and defaults off; playback and the activity spinner remain undimmed.
+
+On tvOS, a native spinner in the top-right corner indicates active browsing/loading, metadata reads, Top Shelf artwork checks, or iCloud synchronization. It appears across the main screen, lists, Settings and connection editors, and is hidden during video playback.
+
+On Apple TV, put BoraMin in the Home screen’s top row to see **Watching** in Top Shelf. Items use the same most-recently-saved order as the Watching screen, with standard square tiles showing embedded PNG cover artwork when available and filenames beneath. Files without usable embedded PNG artwork show the SF Symbol `film`; video-frame generation is not implemented yet. Selecting a tile opens the existing Watching resume flow. The app refreshes the shelf after local or iCloud bookmark changes and when leaving the app; tvOS controls when the refreshed shelf appears. Open BoraMin once after installation to publish the initial list. Only names, opaque bookmark IDs and content-hashed local image filenames are shared with the extension, in the shared group’s purgeable `Library/Caches/TopShelf` directory. Foregrounding the app recreates a missing snapshot and requests a shelf refresh. Film artwork is cached there at both standard 1× and 2× scales.
+
+Embedded artwork is used only on tvOS Top Shelf; browser and Watching rows retain their existing icons. The app checks Watching files serially while foregrounded and idle, using separate connections, and cancels artwork reads during browsing operations, playback or backgrounding. It validates file size/modification time on each foreground visit; unavailable servers retain cached artwork and retry on the next visit. Explicitly named `cover.png` or `front.png` takes priority over other PNG attachments. Extraction reads at most 16 MiB of container headers and accepts PNG payloads up to 8 MiB, without video decoding or a whole-file download fallback. Images are downsampled to 320 pixels on their longest edge with transparency preserved.
+
+Artwork and its file-identity metadata stay on the current device in purgeable `Library/Caches/EmbeddedArtwork-v1`, bounded to 1,000 records and 64 MiB of images. Successful checks finding no PNG are cached for seven days; failed/incomplete reads remain retryable. The app copies only the current shelf's images into the local shared Top Shelf cache and removes obsolete copies. Neither images nor thumbnail metadata are included in iCloud sync. A missing shared image is republished from the app cache on refresh; a missing app-cache image is extracted again when idle.
+
 
 ### Subtitle behavior and limits
 
@@ -69,7 +82,7 @@ Xcode development builds use CloudKit **Development**; TestFlight/App Store buil
 
 ## Build
 
-Requires Xcode, Python 3, make, and network access for initial dependency downloads. Dependencies include AMSMB2/libsmb2, FFmpeg, AetherEngine, and libass. Preserve the [dependency notices](vendor/DEPENDENCIES.md) when distributing.
+Requires Xcode, Python 3, make, and network access for initial dependency downloads. Dependencies include AMSMB2/libsmb2, FFmpeg, AetherEngine, and libass. All three app targets bundle the [Licences directory](Licences/README.md), available in **Settings → Licences**. Preserve its notices and the [dependency source/relinking materials](vendor/DEPENDENCIES.md) when distributing.
 
 Generate the project and build the FFmpeg libraries for the platforms you need:
 

@@ -16,8 +16,10 @@ final class ContentProvider: TVTopShelfContentProvider {
             let item = TVTopShelfSectionedItem(identifier: entry.id)
             item.title = entry.title
             item.imageShape = .square
-            item.setImageURL(image1x, for: .screenScale1x)
-            item.setImageURL(image2x, for: .screenScale2x)
+            let artwork = entry.artwork.flatMap { TopShelfSnapshot.artworkURL($0) }
+                .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+            item.setImageURL(artwork ?? image1x, for: .screenScale1x)
+            item.setImageURL(artwork ?? image2x, for: .screenScale2x)
             if let url = TopShelfSnapshot.actionURL(for: entry.id) {
                 item.displayAction = TVTopShelfAction(url: url)
                 item.playAction = TVTopShelfAction(url: url)

@@ -135,3 +135,7 @@ Coverage includes Caddy JSON (including encoded filenames and nested folders), B
 ## tvOS 26.2 simulator
 
 On Apple Silicon, build the private bridge dependencies with `python3 tools/build_ffmpeg.py --platform tvos-simulator`, then select the running tvOS 26.2+ simulator under the BoraMin tvOS scheme. Device libraries are rebuilt separately with `--platform tvos`. Both use the same pinned FFmpeg source and private framework boundary; the simulator does not substitute Mac or device binaries. iOS Simulator remains unconfigured. Simulator browsing/debugging can help reproduce list-navigation faults, but does not establish physical-device playback or tvOS 27 behavior.
+
+Embedded thumbnail regression checks: `python3 tools/test_thumbnails.py` (also included in `tools/run_tests.py`). These generate temporary synthetic PNG/MKV/MP4 fixtures and verify exact embedded bytes, cover selection, cancellation/output/read bounds, downsampling with alpha, local persistence, file invalidation, purge recovery, negative caching, eviction, legacy Top Shelf snapshots and local artwork filename validation. They do not access remote media or exercise visible UI rendering.
+
+To repeat artwork extraction against a built private framework, add `--framework-dir build/Thumbnails/Build/Products/Debug/BoraMin.app/Contents/Frameworks` to `tools/test_thumbnails.py`.

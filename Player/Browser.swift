@@ -40,7 +40,8 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         return connectionID.flatMap { connections.connection(id: $0)?.title } ?? URL(string: host)?.host ?? "Files"
     }
     func canDelete(_ file: PlaybackFile) -> Bool { URL(string: file.server)?.scheme == "smb" }
-    private var metadataJobs: [UUID: CancellationFlag] = [:]
+    @Published private var metadataJobs: [UUID: CancellationFlag] = [:]
+    var loadingMetadata: Bool { !metadataJobs.isEmpty }
     var cancellation = CancellationFlag()
     private var operation: Task<Void, Never>?
     private var operationID: UUID?

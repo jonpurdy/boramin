@@ -6,6 +6,7 @@ The interface uses NavigationSplitView, native tables/selection, toolbar navigat
 
 | Shortcut | Action |
 | --- | --- |
+| Left / Right (playback window) | Seek backward / forward 10 seconds |
 | Command-Up | Enclosing folder |
 | Command-R | Refresh |
 | Command-K | Connections |

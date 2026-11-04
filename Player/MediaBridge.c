@@ -1,6 +1,7 @@
 #include "MediaBridge.h"
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/avstring.h>
 #include <libavutil/pixdesc.h>
 #include <libavutil/mastering_display_metadata.h>
 #include <libswresample/swresample.h>
@@ -46,7 +47,7 @@ static void input_close(InputIO **input) {
     if((*input)->avio) { av_freep(&(*input)->avio->buffer); avio_context_free(&(*input)->avio); }
     av_freep(input);
 }
-static int input_open(const char *path,const MediaIO *source,AVFormatContext **format,InputIO **input) {
+static int input_open_bounded(const char *path,const MediaIO *source,AVFormatContext **format,InputIO **input,int64_t limit) {
     *format=avformat_alloc_context();
     if(!*format)return AVERROR(ENOMEM);
     (*format)->probesize=1024*1024;
@@ -55,7 +56,7 @@ static int input_open(const char *path,const MediaIO *source,AVFormatContext **f
         if(!source->read || source->size<=0) return AVERROR(EINVAL);
         *input=av_mallocz(sizeof(InputIO));
         if(!*input || !*format) return AVERROR(ENOMEM);
-        (*input)->source=*source;
+        (*input)->source=*source; (*input)->read_limit=limit;
         uint8_t *buffer=av_malloc(65536); if(!buffer) return AVERROR(ENOMEM);
         (*input)->avio=avio_alloc_context(buffer,65536,0,*input,input_read,NULL,input_seek);
         if(!(*input)->avio) { av_free(buffer); return AVERROR(ENOMEM); }
@@ -63,6 +64,41 @@ static int input_open(const char *path,const MediaIO *source,AVFormatContext **f
         (*format)->interrupt_callback=(AVIOInterruptCB){input_cancelled,*input};
     }
     return avformat_open_input(format,path,NULL,NULL);
+}
+
+static int input_open(const char *path,const MediaIO *source,AVFormatContext **format,InputIO **input) {
+    return input_open_bounded(path,source,format,input,0);
+}
+
+// Read container headers only: no stream analysis, video decoding or packet scan.
+int media_artwork_io(MediaIO source,uint8_t *output,int capacity) {
+    if(!output || capacity<=0) return AVERROR(EINVAL);
+    AVFormatContext *format=NULL; InputIO *io=NULL;
+    int result=input_open_bounded(NULL,&source,&format,&io,16*1024*1024);
+    if(result<0) goto end;
+    result=0;
+    const uint8_t signature[]={137,80,78,71,13,10,26,10};
+    int best=-1, oversized=0;
+    for(unsigned i=0;i<format->nb_streams;i++) {
+        AVStream *s=format->streams[i];
+        const uint8_t *bytes=NULL; size_t size=0;
+        if(s->disposition&AV_DISPOSITION_ATTACHED_PIC) {
+            bytes=s->attached_pic.data; size=s->attached_pic.size;
+        } else if(s->codecpar->codec_type==AVMEDIA_TYPE_ATTACHMENT) {
+            bytes=s->codecpar->extradata; size=s->codecpar->extradata_size;
+        }
+        if(!bytes || size<sizeof(signature) || memcmp(bytes,signature,sizeof(signature))) continue;
+        if(size>(size_t)capacity) { oversized=1; continue; }
+        // Prefer an explicitly named cover over another PNG attachment.
+        AVDictionaryEntry *name=av_dict_get(s->metadata,"filename",NULL,0);
+        int rank=name && (!av_strcasecmp(name->value,"cover.png") || !av_strcasecmp(name->value,"front.png"))?1:0;
+        if(rank>best) { memcpy(output,bytes,size); result=(int)size; best=rank; }
+    }
+    if((oversized && best<0) || (format->pb && format->pb->error<0 && format->pb->error!=AVERROR_EOF) ||
+        (io && (input_cancelled(io) || io->bytes_read>=io->read_limit))) result=AVERROR(EIO);
+end:
+    avformat_close_input(&format); input_close(&io);
+    return result;
 }
 
 typedef struct { const uint8_t *bytes; size_t count, bit; int error; } HeaderBits;

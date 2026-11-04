@@ -64,6 +64,27 @@ enum MetadataProbeService {
         } onCancel: { flag.cancel() }
     }
 
+    /// Dedicated Top Shelf reads: the caller owns an isolated connection and its lifetime.
+    static func artwork(session: RemoteSession, path: String, size: Int64,
+                        cancellation flag: CancellationFlag) async -> EmbeddedArtworkResult? {
+        await withTaskCancellationHandler {
+            guard !flag.cancelled, let source = try? await session.openFile(path: path, size: size, cancellation: flag) else { return nil }
+            return await withCheckedContinuation { continuation in
+                queue.async {
+                    guard !flag.cancelled else { continuation.resume(returning: nil); return }
+                    var bytes = [UInt8](repeating: 0, count: 8 * 1024 * 1024)
+                    let count = media_artwork_io(source.makeIO(), &bytes, Int32(bytes.count))
+                    guard count >= 0, !flag.cancelled else { continuation.resume(returning: nil); return }
+                    if count == 0 { continuation.resume(returning: EmbeddedArtworkResult(png: nil)); return }
+                    guard let png = ThumbnailCache.downsample(Data(bytes.prefix(Int(count)))) else {
+                        continuation.resume(returning: nil); return
+                    }
+                    continuation.resume(returning: EmbeddedArtworkResult(png: png))
+                }
+            }
+        } onCancel: { flag.cancel() }
+    }
+
     private static func inspectMetadata(source: CachedRemoteFile, fileExtension: String) -> (Double?, PlaybackRoute?) {
         var info = MediaInfo(), error = [CChar](repeating: 0, count: 512)
         if let reader = media_open_io(source.makeIO(), &info, &error, error.count) {

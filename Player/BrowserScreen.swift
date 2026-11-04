@@ -37,6 +37,7 @@ struct BrowserScreen: View {
     @AppStorage("showDebugInfo") private var showDebugInfo = false
     #if os(tvOS)
     @AppStorage("expandFilenameImmediately") private var expandFilenameImmediately = false
+    @AppStorage("oledMode") private var oledMode = false
     #endif
     @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
@@ -82,6 +83,13 @@ struct BrowserScreen: View {
         case nil: return "BoraMin"
         }
     }
+    #if os(tvOS)
+    private var tvBrowsingBusy: Bool { filesBrowser.busy || favoriteBrowser.busy || watchingBrowser.busy }
+    private var tvPlaying: Bool { filesBrowser.playing != nil || favoriteBrowser.playing != nil || watchingBrowser.playing != nil }
+    private var tvMetadataLoading: Bool {
+        filesBrowser.loadingMetadata || favoriteBrowser.loadingMetadata || watchingBrowser.loadingMetadata
+    }
+    #endif
     var body: some View {
         NavigationStack(path: navigationPath) {
             home
@@ -104,6 +112,8 @@ struct BrowserScreen: View {
                 #endif
         }
         #if os(tvOS)
+        .modifier(TopShelfLifecycle(busy: tvBrowsingBusy || tvPlaying,
+                                    loading: tvBrowsingBusy || tvMetadataLoading, playing: tvPlaying))
         .onReceive(NotificationCenter.default.publisher(for: .topShelfOpenItem)) { notification in
             guard let url = notification.object as? URL else { return }
             guard url.scheme == "boramin", url.host == "watching",
@@ -115,7 +125,7 @@ struct BrowserScreen: View {
             }
         }
         #endif
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.browserBackground.ignoresSafeArea())
         .disabled(browser.busy)
         .task {
             #if os(tvOS)
@@ -154,12 +164,14 @@ struct BrowserScreen: View {
             .overlay {
                 if browser.busy {
                     VStack(spacing: 24) {
+                        #if !os(tvOS)
                         ProgressView()
+                        #endif
                         Text(browser.status).multilineTextAlignment(.center)
                         if browser.status.hasPrefix("Opening stream") || browser.status.hasPrefix("Preparing") {
                             Button("Cancel") { browser.cancel() }
                         }
-                    }.padding(50).background(Color.black, in: RoundedRectangle(cornerRadius: 24))
+                    }.padding(50).background(Color.browserPanelBackground, in: RoundedRectangle(cornerRadius: 24))
                 }
             }
             .alert("Unable to continue", isPresented: Binding(get: { browser.error != nil }, set: { if !$0 { browser.error = nil } })) {
@@ -177,9 +189,16 @@ struct BrowserScreen: View {
                         try? await Task.sleep(for: .milliseconds(500)); browser.error = message
                     }
                 }.ignoresSafeArea()
+                    .preferredColorScheme(.dark)
             }
+        #if os(tvOS)
         .preferredColorScheme(.dark)
-        .background(Color.black.ignoresSafeArea())
+        #endif
+        .background(Color.browserBackground.ignoresSafeArea())
+        #if os(tvOS)
+        .modifier(TVOLEDMode(active: !tvPlaying, location: navigation.count))
+        #endif
+        .tvBackgroundActivityIndicator()
     }
     private var home: some View {
         #if os(tvOS)
@@ -190,7 +209,7 @@ struct BrowserScreen: View {
             homeLink("Settings", symbol: "gearshape", destination: .settings)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .background(Color.browserBackground)
         #else
         List {
             NavigationLink(value: Destination.favorites) { Label("Favorites", systemImage: "star") }
@@ -199,8 +218,7 @@ struct BrowserScreen: View {
             NavigationLink(value: Destination.settings) { Label("Settings", systemImage: "gearshape") }
         }
         .navigationTitle("BoraMin")
-        .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(Color.browserBackground)
         #endif
     }
     private let homeScale: CGFloat = 0.65
@@ -293,11 +311,8 @@ struct BrowserScreen: View {
                     }
                     .listStyle(.plain)
                     .font(listPrimaryFont)
-                    #if os(iOS)
-                    .scrollContentBackground(.hidden)
-                    #endif
                     .buttonBorderShape(.roundedRectangle)
-                    .background(Color.black)
+                    .background(Color.browserBackground)
                     .browserFocusScope(listingFocus)
                     // A new directory gets a fresh list and its preferred initial focus.
                     .id([browser.host, browser.share, browser.path, displayAllFiles ? "all" : "media"])
@@ -307,7 +322,7 @@ struct BrowserScreen: View {
                     }
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.browserBackground.ignoresSafeArea())
         .task(id: scenePhase) {
             guard scenePhase == .active, !browser.showingConnections else { return }
             if browser.connected { browser.refreshConnection() }
@@ -335,6 +350,13 @@ struct BrowserScreen: View {
             }
             #if os(tvOS)
             Section {
+                Toggle("OLED Mode", isOn: $oledMode)
+                    .toggleStyle(.switch)
+            } footer: {
+                Text("Dim screens after ten seconds of inactivity. Saved on this device.")
+                    .font(.body).foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Expand filename immediately in list views", isOn: $expandFilenameImmediately)
                     .toggleStyle(.switch)
             } footer: {
@@ -354,13 +376,13 @@ struct BrowserScreen: View {
                 Toggle("Show Debug Info", isOn: $showDebugInfo)
                     .toggleStyle(.switch)
             }
+            Section {
+                NavigationLink("Licences") { LicencesView() }
+            }
         }
         .font(listPrimaryFont ?? .body)
         .listStyle(.plain)
-        #if os(iOS)
-        .scrollContentBackground(.hidden)
-        #endif
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.browserBackground.ignoresSafeArea())
     }
     private var favoritesList: some View {
         Group {
@@ -388,13 +410,10 @@ struct BrowserScreen: View {
                 }
                 .listStyle(.plain)
                 .font(listPrimaryFont)
-                #if os(iOS)
-                .scrollContentBackground(.hidden)
-                #endif
                 .buttonBorderShape(.roundedRectangle)
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.browserBackground.ignoresSafeArea())
     }
     private var watchingList: some View {
         Group {
@@ -431,13 +450,10 @@ struct BrowserScreen: View {
                 }
                 .listStyle(.plain)
                 .font(listPrimaryFont)
-                #if os(iOS)
-                .scrollContentBackground(.hidden)
-                #endif
                 .buttonBorderShape(.roundedRectangle)
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.browserBackground.ignoresSafeArea())
         .alert("Delete File?", isPresented: Binding(get: { watchingFileToDelete != nil }, set: { if !$0 { watchingFileToDelete = nil } }), presenting: watchingFileToDelete) { file in
             Button("Delete", role: .destructive) {
                 watchingBrowser.deleteWatchingFile(file) { watching = PlaybackPositions.shared.watching() }
@@ -579,3 +595,113 @@ private extension View {
 }
 
 #endif
+
+#if os(tvOS)
+/// SwiftUI scene lifecycle owns foreground artwork work, including multi-scene app lifecycles.
+private struct TopShelfLifecycle: ViewModifier {
+    let busy: Bool
+    let loading: Bool
+    let playing: Bool
+    @Environment(\.scenePhase) private var phase
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: phase, initial: true) { _, phase in
+                TopShelfPublisher.setForeground(phase == .active)
+            }
+            .onChange(of: busy, initial: true) { _, busy in
+                TopShelfPublisher.setBrowsingBusy(busy)
+            }
+            .onChange(of: loading, initial: true) { _, loading in
+                TVBackgroundActivity.shared.loading = loading
+            }
+            .onChange(of: playing, initial: true) { _, playing in
+                TVBackgroundActivity.shared.playing = playing
+            }
+    }
+}
+#endif
+
+#if os(tvOS)
+private struct TVActivityOverlay: ViewModifier {
+    @ObservedObject private var activity = TVBackgroundActivity.shared
+    @ObservedObject private var cloud = ICloudSync.shared
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .topTrailing) {
+            if !activity.playing && (activity.loading || activity.artwork || cloud.syncing) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(.white)
+                    .padding(.top, 24)
+                    .padding(.trailing, 40)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("Background activity")
+            }
+        }
+    }
+}
+#endif
+
+extension View {
+    @ViewBuilder func tvBackgroundActivityIndicator() -> some View {
+        #if os(tvOS)
+        modifier(TVActivityOverlay())
+        #else
+        self
+        #endif
+    }
+}
+
+#if os(tvOS)
+private struct TVOLEDMode: ViewModifier {
+    let active: Bool
+    let location: Int
+    @AppStorage("oledMode") private var enabled = false
+    @Environment(\.scenePhase) private var phase
+    @State private var dimmed = false
+    @State private var generation = 0
+
+    private func wake() {
+        dimmed = false
+        generation += 1
+    }
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                Color.black
+                    .opacity(enabled && active && dimmed ? 0.5 : 0)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .task(id: enabled && active && phase == .active ? generation : nil) {
+                dimmed = false
+                guard enabled, active, phase == .active else { return }
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.3)) { dimmed = true }
+            }
+            .onChange(of: location) { _, _ in wake() }
+            .onReceive(NotificationCenter.default.publisher(for: UIFocusSystem.didUpdateNotification)) { _ in wake() }
+            .onReceive(NotificationCenter.default.publisher(for: UIFocusSystem.movementDidFailNotification)) { _ in wake() }
+            .simultaneousGesture(TapGesture().onEnded { wake() })
+    }
+}
+#endif
+
+// Browsing follows the iOS appearance; tvOS retains its black presentation.
+extension Color {
+    static var browserBackground: Color {
+        #if os(iOS)
+        Color(uiColor: .systemBackground)
+        #else
+        .black
+        #endif
+    }
+    static var browserPanelBackground: Color {
+        #if os(iOS)
+        Color(uiColor: .secondarySystemBackground)
+        #else
+        .black
+        #endif
+    }
+}

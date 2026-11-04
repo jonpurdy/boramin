@@ -43,3 +43,7 @@ uint64_t media_process_resident_bytes(void);
 
 // Cumulative app CPU time, or -1 when unavailable.
 double media_process_cpu_seconds(void);
+
+// PNG container artwork: positive byte count, zero absent, negative incomplete/error.
+// Caller supplies a bounded output buffer; remote header reads are capped at 16 MiB.
+int media_artwork_io(MediaIO io, uint8_t *output, int capacity);

@@ -6,7 +6,7 @@
 
 ## Code and builds
 
-- `Player/`: shared browsing/playback and iOS/tvOS screens. `Shared/`: iCloud. `iOS/` and `MacOS/`: platform code/configuration.
+- `Player/`: shared browsing/playback and iOS/tvOS screens. `Shared/`: iCloud. `iOS/`, `tvOS/`, and `MacOS/`: platform code/configuration. `tvOS/TopShelf/`: the tvOS Top Shelf extension, with `TopShelfSnapshot.swift` shared by the tvOS app and extension targets.
 - Browsing boundaries: `Browser.swift` owns navigation/presentation; `SMBBrowsingService.swift` owns remote operations; `MetadataProbeService.swift` owns metadata reads; `BrowserScreen.swift` owns screens; `BrowserDiagnostics.swift` owns opt-in probes. Keep those responsibilities separate.
 - Use `BoraMin.xcodeproj` and its three platform schemes. Keep project-definition changes in `tools/create_project.py`; regenerate only when needed. See `README.md` for prerequisites and supported targets.
 - Mac supports Apple Silicon; current dependencies do not include simulator/Intel slices. Do not silently lower deployment targets to work around SDK warnings.

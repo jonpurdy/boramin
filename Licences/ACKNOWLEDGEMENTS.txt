@@ -1,0 +1,80 @@
+BoraMin — Third-Party Licences and Acknowledgements
+
+BoraMin uses AetherEngine under LGPL v3 with its Apple Store / DRM exception,
+and FFmpeg, libsmb2 and FriBidi under the LGPL. Applicable licence texts,
+copyright notices and exceptions follow below.
+
+This software uses libraries from the FFmpeg project under LGPL v2.1 or later.
+FFmpeg: https://ffmpeg.org
+
+Portions of this software are copyright © 2006 The FreeType Project
+(https://www.freetype.org). All rights reserved.
+
+Components and upstream sources
+
+---
+---
+
+AetherEngine
+814fef14d394c13c378869dc5c13963af8be9a0d — https://github.com/superuser404notfound/AetherEngine/tree/814fef14d394c13c378869dc5c13963af8be9a0d
+
+FFmpeg, private BoraMinMedia framework
+8.0.1 — https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz
+
+FFmpegBuild, including its FFmpeg build
+3.9.0 — https://github.com/superuser404notfound/FFmpegBuild/tree/3b398c8f6340fe5fb4a7cb9a2a211a16677171e0, FFmpeg n8.1.3 with upstream build-package patches
+
+dav1d, via FFmpegBuild
+1.5.4 — https://code.videolan.org/videolan/dav1d/-/tree/1.5.4
+
+zimg, via FFmpegBuild
+3.0.6 — https://github.com/sekrit-twc/zimg/tree/release-3.0.6
+
+libzvbi, via FFmpegBuild
+0.2.45 — https://github.com/zapping-vbi/zvbi/tree/v0.2.45, modified by FFmpegBuild
+
+AMSMB2
+4.0.3 / 1726aaaf7adf63d7d1d2a0c5d1b0e635028215c0 — https://github.com/amosavian/AMSMB2/tree/1726aaaf7adf63d7d1d2a0c5d1b0e635028215c0
+
+libsmb2
+aff9fa6ba9f41cfd3c15d184554601ec3f6d8d03 — https://github.com/sahlberg/libsmb2/tree/aff9fa6ba9f41cfd3c15d184554601ec3f6d8d03
+
+LibDovi packaging
+2.1.0 — https://github.com/superuser404notfound/LibDovi/tree/0d7cce1d6836a30d13a3a2326e50a153af53f014
+
+dolby_vision / libdovi, via LibDovi
+dovi_tool — https://github.com/quietvoid/dovi_tool, as packaged by LibDovi 2.1.0
+
+SwiftAssRenderer
+1.3.1 — https://github.com/mihai8804858/swift-ass-renderer/tree/28919f6b5ddd896d327b0283f8d97624902236e6
+
+SwiftLibass
+1.4.0 — https://github.com/mihai8804858/swift-libass/tree/6513c488e377a26c06db327fb2acfc2653a041d5
+
+libass
+0.17.3 — https://github.com/libass/libass/tree/0.17.3
+
+FreeType
+2.13.2 — https://github.com/freetype/freetype/tree/VER-2-13-2
+
+HarfBuzz
+8.5.0 — https://github.com/harfbuzz/harfbuzz/tree/8.5.0
+
+FriBidi
+1.0.14 — https://github.com/fribidi/fribidi/tree/v1.0.14
+
+Fontconfig
+2.15.0 — https://github.com/fontconfig/fontconfig/tree/2.15.0
+
+libpng
+1.6.43 — https://github.com/pnggroup/libpng/tree/v1.6.43
+
+CombineSchedulers
+1.2.2 — https://github.com/pointfreeco/combine-schedulers/tree/114354e8c1667a2edc4993700fb9fa4f90157b56
+
+ConcurrencyExtras
+1.4.3 — https://github.com/pointfreeco/swift-concurrency-extras/tree/8a4260f7373493435bd21194585c95b72bfdd401
+
+IssueReporting / XCTestDynamicOverlay
+1.13.1 — https://github.com/pointfreeco/xctest-dynamic-overlay/tree/d9308ad679143c26a30dec52daefe82f54af2b82
+

@@ -5,6 +5,7 @@ struct MacSettingsView: View {
     @ObservedObject private var cloud = ICloudSync.shared
     @AppStorage("displayAllFiles") private var allFiles = false
     @AppStorage("showDebugInfo") private var debug = false
+    @State private var showingLicences = false
     var body: some View {
         Form {
             Section {
@@ -21,8 +22,22 @@ struct MacSettingsView: View {
                 Text(cloud.statusAndLastSync).font(.body).foregroundStyle(.secondary)
                 Button("Sync Now") { Task { await cloud.synchronize() } }.disabled(!cloud.enabled || cloud.syncing)
             }
+            Section {
+                Button("Licences") { showingLicences = true }
+            }
         }
         .font(.body)
         .formStyle(.grouped)
+        .sheet(isPresented: $showingLicences) {
+            NavigationStack {
+                LicencesView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingLicences = false }
+                        }
+                    }
+            }
+            .frame(width: 640, height: 520)
+        }
     }
 }

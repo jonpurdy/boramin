@@ -6,7 +6,7 @@ import Combine
 
 private let macPlaybackLog = Logger(subsystem: "com.example.BoraMin", category: "Playback")
 
-/// AVKit owns the Mac transport, keyboard shortcuts, media menus and full-screen UI.
+/// AVKit owns the Mac transport, media menus and full-screen UI.
 /// The existing demuxed-video layer is placed in AVKit's public content overlay.
 final class MacPlayerView: AVPlayerView {
     var sampleVideo: HardwareVideo?
@@ -53,6 +53,7 @@ final class MacPlayerView: AVPlayerView {
     private var lastSampleTime = ProcessInfo.processInfo.systemUptime
     private var lastBytes: Int64 = 0
     private var onClose: (() -> Void)?
+    private var keyboard: MacPlaybackKeyboard?
     private var tracks: PlaybackTracks?
     private var tracksHost: NSHostingView<PlaybackTracksButton>?
     #if canImport(AetherEngine)
@@ -107,6 +108,15 @@ final class MacPlayerView: AVPlayerView {
         window.collectionBehavior = [.fullScreenPrimary]
         window.delegate = self
         window.contentView = playerView
+        keyboard = MacPlaybackKeyboard(view: playerView) { [weak self] offset in
+            guard let self, !self.stopped, self.restored,
+                  let item = self.player.currentItem, item.status == .readyToPlay else { return }
+            let current = self.player.currentTime().seconds
+            let duration = item.duration.seconds.isFinite ? item.duration.seconds : self.media.info.duration
+            guard current.isFinite, duration.isFinite, duration > 0 else { return }
+            let target = min(max(0, current + offset), max(0, duration - 0.1))
+            self.player.seek(to: CMTime(seconds: target, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
         window.center()
         notifications.append(NotificationCenter.default.addObserver(forName: AVPlayerItem.playbackStalledNotification, object: item, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -271,6 +281,7 @@ final class MacPlayerView: AVPlayerView {
         engineRouteObserver = nil
         media.streaming?.aetherPlayback?.onItemChanged = nil
         #endif
+        keyboard?.stop(); keyboard = nil
         startup?.cancel(); timer?.invalidate()
         tracks?.stop(); tracks = nil; tracksHost?.removeFromSuperview(); tracksHost = nil
         readiness?.invalidate(); playbackStatus?.invalidate()
@@ -361,6 +372,7 @@ final class MacPlayerView: AVPlayerView {
     static var current: MacSoftwarePlaybackWindow?
     private let model: AetherSoftwareModel
     private var onClose: (() -> Void)?
+    private var keyboard: MacPlaybackKeyboard?
     static func present(media: PreparedMedia, backend: AetherMKVPlayback, positions: PlaybackPositions? = nil, onClose: @escaping () -> Void) {
         let host = MacSoftwarePlaybackWindow(media: media, backend: backend, positions: positions ?? .shared, onClose: onClose)
         current = host
@@ -378,12 +390,18 @@ final class MacPlayerView: AVPlayerView {
             let alert = NSAlert(); alert.messageText = "Unable to Play Video"; alert.informativeText = message
             alert.beginSheetModal(for: window) { [weak self] _ in self?.close() }
         }))
+        if let view = window.contentView {
+            keyboard = MacPlaybackKeyboard(view: view) { [weak self] offset in
+                guard let self else { return }
+                self.model.seek(to: self.model.engine.currentTime + offset)
+            }
+        }
         window.center()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
-    func stop() { model.stop() }
+    func stop() { keyboard?.stop(); keyboard = nil; model.stop() }
     func windowWillClose(_ notification: Notification) {
-        model.stop()
+        stop()
         window?.contentView = nil
         let callback = onClose; onClose = nil; callback?()
         NotificationCenter.default.post(name: Notification.Name("BoraMinPlaybackSync"), object: nil)

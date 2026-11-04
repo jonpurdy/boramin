@@ -1,0 +1,40 @@
+AMSMB2/AMSMB2.swift
+//
+//  AMSMB2.swift
+//  AMSMB2
+//
+//  Created by Amir Abbas on 5/20/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
+//  All rights reserved.
+//
+
+AMSMB2/FileMonitoring.swift
+//
+//  FileMonitoring.swift
+//  AMSMB2
+//
+//  Created by Amir Abbas on 10/14/24.
+//  Copyright © 2024 Mousavian. Distributed under MIT license.
+//  All rights reserved.
+//
+
+Dependencies/libsmb2/lib/init.c
+/* -*-  mode:c; tab-width:8; c-basic-offset:8; indent-tabs-mode:nil;  -*- */
+/*
+   Copyright (C) 2016 by Ronnie Sahlberg <ronniesahlberg@gmail.com>
+
+   Portions of this code are copyright 2017 to Primary Data Inc.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU Lesser General Public License as published by
+   the Free Software Foundation; either version 2.1 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU Lesser General Public License for more details.
+
+   You should have received a copy of the GNU Lesser General Public License
+   along with this program; if not, see <http://www.gnu.org/licenses/>.
+*/

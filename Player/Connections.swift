@@ -82,14 +82,13 @@ struct ConnectionsList: View {
         #if os(tvOS)
         .font(.system(size: UIFont.preferredFont(forTextStyle: .headline).pointSize, weight: .regular))
         .listStyle(.plain)
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.browserBackground.ignoresSafeArea())
         #elseif os(iOS)
         .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.browserBackground.ignoresSafeArea())
         #endif
         .navigationTitle("Connections")
-        .sheet(item: $editor) { draft in ConnectionEditor(draft: draft) }
+        .sheet(item: $editor) { draft in ConnectionEditor(draft: draft).tvBackgroundActivityIndicator() }
         .alert("Delete Connection?", isPresented: Binding(get: { connectionToDelete != nil }, set: { if !$0 { connectionToDelete = nil } }), presenting: connectionToDelete) { connection in
             Button("Delete", role: .destructive) {
                 store.delete(id: connection.id)
@@ -297,7 +296,7 @@ struct ConnectionEditButton: View {
         // Present outside the action button and reset styles inherited from
         // ContentUnavailableView.actions before hosting editable form controls.
         .sheet(item: $editor) { draft in
-            ConnectionEditor(draft: draft)
+            ConnectionEditor(draft: draft).tvBackgroundActivityIndicator()
                 #if os(iOS)
                 .buttonStyle(.automatic)
                 .textFieldStyle(.automatic)
