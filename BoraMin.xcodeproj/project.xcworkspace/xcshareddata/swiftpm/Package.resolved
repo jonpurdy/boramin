@@ -1,5 +1,5 @@
 {
-  "originHash" : "72ffc4280dfeed65f18a6e97cfd6e43c6be3919ac0361ba55800add641c774bd",
+  "originHash" : "19facf89058c8c4c76f09a9d7834f0c91be8e306c5301ee062132d517a5393ef",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/superuser404notfound/FFmpegBuild",
       "state" : {
-        "revision" : "3b398c8f6340fe5fb4a7cb9a2a211a16677171e0",
-        "version" : "3.9.0"
+        "revision" : "9c87af0231fd1403654c14a0e867fe8aa43c5bea",
+        "version" : "3.12.1"
       }
     },
     {

@@ -26,6 +26,8 @@ with tempfile.TemporaryDirectory(prefix='boramin-tests-') as tmp:
     run([tmp/'cloud-identity-tests'])
     run(['swiftc','-module-cache-path',root/'build/MacModuleCache','-parse-as-library','Player/ConnectionPreferences.swift','Player/Favorites.swift','Player/PlaybackPositions.swift','Shared/ICloudSync.swift','Tests/CloudSyncSchedulingTests.swift','-o',tmp/'cloud-scheduling-tests'])
     run([tmp/'cloud-scheduling-tests'])
+    run(['swiftc','-module-cache-path',root/'build/MacModuleCache','Player/RemoteError.swift','Player/ConnectionRetry.swift','Tests/RemoteErrorTests.swift','-o',tmp/'remote-error-tests'])
+    run([tmp/'remote-error-tests'])
     source=lab/'fixtures/middle.webm'
     audio=tmp/'audio.webm'; caf=tmp/'audio.caf'; packets=tmp/'packets.bin'
     run(['ffmpeg','-v','error','-f','lavfi','-i','color=size=64x64:rate=24:duration=2',

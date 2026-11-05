@@ -152,7 +152,7 @@ struct BrowserScreen: View {
             favoriteBrowser.refreshProgress()
         }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: UserDefaults.standard)
-                .receive(on: RunLoop.main)) { _ in
+                .debounce(for: .milliseconds(100), scheduler: RunLoop.main)) { _ in
                     favorites.reload()
                     watching = PlaybackPositions.shared.watching()
                     #if os(tvOS)

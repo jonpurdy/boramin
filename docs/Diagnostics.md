@@ -145,3 +145,13 @@ Following the review, the user requested explicit cleanup on video exit. `Stream
 The shared stop path covers SMB and HTTP(S) streams through native, VP9 and Aether playback teardown. A native/software presentation transition that preserves the existing Aether session does not stop that transport or clear its active cache. This change does not purge on pause alone, change active playback capacity/locking, or guarantee an immediate matching drop in the operating system's reported process footprint. Physical Apple TV memory/reopen verification remains separate from the isolated cache tests.
 
 Validation passed: the cancellation probe's retained-cache/stalled-read/late-completion checks, the main suite, offline browsing, and all three platform Release builds. The generated diagnostic app was removed; logs are under ignored `build/CacheCleanup/`. At the user's request, the development-signed 0.5 (5) Release build containing cache cleanup and the SIGPIPE fix was subsequently installed on the paired Apple TV on October 31; `build/CacheCleanup/tvos-install.json` records success. Device cache/memory behavior has not yet been verified. No upload was performed.
+
+## Apple TV startup timing investigation (November 4, 2026)
+
+Temporary timing instrumentation measured Top Shelf refreshes, slow credential lookups, iCloud processing and main-actor scheduling gaps. It logged only fixed operation names and durations. The instrumentation and its build flag were removed after the user confirmed the startup delay was gone; detailed evidence remains under ignored `build/StartupDelay/`.
+
+### Startup preference-notification workload
+
+On November 4, an opt-in Apple TV capture recorded a 7,701 ms main-actor scheduling gap ending at 14:40:01.226, matching the user’s reported input stall. Console counted 249 Top Shelf refreshes (typically 12–13 ms each) and 245 iCloud captures (typically 15–16 ms each); the cached-record apply loop itself took approximately 39 ms. The semantic snapshot comparison prevented redundant shelf publications, but each preference notification still triggered image reads/hashing and cloud snapshots.
+
+The follow-up skips unchanged cloud-applied favorites, positions, resets, subtitle selections and settings. It debounces preference-driven cloud captures and browser/list/shelf updates by 100 ms, while retaining synchronous capture before cloud operations and the explicit cloud-data refresh. The diagnostic build was deployed, and the user confirmed the startup delay was gone. Temporary timing instrumentation was then removed, retaining the fixes. Detailed timing evidence and validation logs are under ignored `build/StartupDelay/`.

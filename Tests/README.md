@@ -4,7 +4,7 @@ Run commands from the repository root with the configured Xcode toolchain. The p
 
 ## Fast host checks
 
-These suites need no device, SMB connection, or iCloud account. Connection tests cover multiple servers/accounts, stable edits, local selection, connection deletion (including synced deletion, shared credentials, selection repair and relaunch), and legacy favorite/Watching migration. The connection suite uses disposable Keychain entries and requires host Keychain access; Swift macro compilation also requires a toolchain environment that permits compiler plugins. Run outside a restrictive agent sandbox when necessary:
+These suites need no device, SMB connection, or iCloud account. Connection tests cover multiple servers/accounts, stable edits, local selection, connection deletion (including synced deletion, independent per-ID SMB/HTTP credentials, selection repair and relaunch), legacy credential migration (including intentional empty-password edits), and legacy favorite/Watching migration. The connection suite uses disposable Keychain entries and requires host Keychain access; Swift macro compilation also requires a toolchain environment that permits compiler plugins. Run outside a restrictive agent sandbox when necessary:
 
 ```sh
 set -e
@@ -139,3 +139,7 @@ On Apple Silicon, build the private bridge dependencies with `python3 tools/buil
 Embedded thumbnail regression checks: `python3 tools/test_thumbnails.py` (also included in `tools/run_tests.py`). These generate temporary synthetic PNG/MKV/MP4 fixtures and verify exact embedded bytes, cover selection, cancellation/output/read bounds, downsampling with alpha, local persistence, file invalidation, purge recovery, negative caching, eviction, legacy Top Shelf snapshots and local artwork filename validation. They do not access remote media or exercise visible UI rendering.
 
 To repeat artwork extraction against a built private framework, add `--framework-dir build/Thumbnails/Build/Products/Debug/BoraMin.app/Contents/Frameworks` to `tools/test_thumbnails.py`.
+
+For the read-only HEVC/AAC Mac failure investigation, use `python3 tools/run_playback_probe.py failure -- kpop --hosted`. Add `--verify-alternate` to test a diagnostic-only reopen through the existing engine alternate path after the native item fails. It requires an active rendered display layer and observed video FPS above 5 with an advancing timeline, rather than accepting audio-clock progress alone. It uses existing local saved connections/Keychain credentials, does not enable iCloud or save playback positions, and does not modify source media. This mode contacts the named server file and is not an offline fixture test. The `--` passes diagnostic flags through the runner. Remove the generated diagnostic app afterward.
+
+The failure probe also accepts `kpop-remux` for the user's stream-copy comparison file, `--documented-host` for a minimal pre-bound public surface, and `--controls` for pause, fresh compositor-frame timestamps after forward/backward seeks, and stop. These are opt-in, read-only SMB diagnostics using isolated preferences; they do not modify source media or saved positions.

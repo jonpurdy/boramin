@@ -50,7 +50,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
     private var engine: CKSyncEngine?
     private var state = State()
     private var observed: [String: Snapshot] = [:]
-    private var observer: NSObjectProtocol?
+    private var observer: AnyCancellable?
     private var playbackObserver: NSObjectProtocol?
     private var file: URL?
     private var scheduled: Task<Void, Never>?
@@ -78,10 +78,13 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         }
         ConnectionPreferences.shared.reload()
         capture(initial: true)
-        observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
-                                                          object: defaults, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.capture() }
-        }
+        // A sync applies many records. Capture once after the preference-write burst,
+        // rather than enqueueing one expensive main-actor snapshot per notification.
+        observer = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: defaults)
+            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                _ = Self.engineTask { [weak self] in self?.capture() }
+            }
         playbackObserver=NotificationCenter.default.addObserver(forName:Notification.Name("BoraMinPlaybackSync"),object:nil,queue:.main) { [weak self] _ in
             Task { @MainActor in self?.capture(); self?.schedule(delay:0,urgent:true) }
         }
@@ -347,9 +350,13 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         } else { record=CKRecord(recordType:"BoraMinUserData",recordID:recordID(key)) }
         guard let value = Self.normalizedConnection(item.value) else { throw SyncError(message: "A connection’s iCloud identity could not be verified.") }
         record.encryptedValues["payload"]=try JSONEncoder().encode(value) as NSData
-        if item.value.kind == "server", let address=item.value.fields["server"],
-           let password=ConnectionPreferences.shared.password(address:address,username:item.value.fields["username"] ?? "",domain:item.value.fields["domain"] ?? "") {
-            record.encryptedValues["password"]=password as NSString
+        if value.kind == "server" {
+            if value.state == "deleted" {
+                record.encryptedValues["password"] = nil
+            } else if let connectionID = value.fields["id"],
+               let password = ConnectionPreferences.shared.password(connectionID: connectionID) {
+                record.encryptedValues["password"] = password as NSString
+            }
         }
         return record
     }
@@ -361,9 +368,9 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         if let local=state.items[remote.id], state.pending.contains(remote.id), newer(local.value,than:remote) {
             state.items[remote.id]?.systemFields=metadata(record)
         } else {
-            if remote.kind == "server", let password=record.encryptedValues["password"] as? String,
-               let address=remote.fields["server"], let server=Self.serverURL(address) {
-                try ConnectionPreferences.shared.storePassword(server:server,username:remote.fields["username"] ?? "",domain:remote.fields["domain"] ?? "",password:password)
+            if remote.kind == "server", remote.state != "deleted",
+               let connectionID = remote.fields["id"], let password = record.encryptedValues["password"] as? String {
+                try ConnectionPreferences.shared.storePassword(connectionID: connectionID, password: password)
             }
             state.items[remote.id]=Item(value:remote,systemFields:metadata(record))
             state.pending.remove(remote.id)
@@ -394,11 +401,12 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
             guard let address=f["server"], let server=Self.serverURL(address),
                   let share=f["share"], let path=f["path"],
                   let favorite=FavoriteLocation(server:server,share:share,path:path,connectionID:f["connectionID"],identity:f["identity"]) else { return }
-            var favorites=defaults.data(forKey:"favoriteLocations.v1").flatMap { try? JSONDecoder().decode([FavoriteLocation].self,from:$0) } ?? []
+            let previousFavorites=defaults.data(forKey:"favoriteLocations.v1").flatMap { try? JSONDecoder().decode([FavoriteLocation].self,from:$0) } ?? []
+            var favorites=previousFavorites
             favorites.removeAll { $0.id == favorite.id }
             if value.state != "deleted" { favorites.append(favorite) }
             favorites.sort(by: FavoriteLocation.alphabeticallyPrecedes)
-            defaults.set(try JSONEncoder().encode(favorites),forKey:"favoriteLocations.v1")
+            if favorites != previousFavorites { defaults.set(try JSONEncoder().encode(favorites),forKey:"favoriteLocations.v1") }
         case "video":
             guard let key = f["key"] else { return }
             // Inactive metadata is a bounded local cache. Keep it when a cloud
@@ -407,8 +415,10 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
             if let file = PlaybackFile(fields: f), file.key == key { PlaybackPositions.shared.remember(file) }
         case "position":
             guard let key=f["key"] else { return }
-            var positions=defaults.dictionary(forKey:"playbackPositions.v1") as? [String:[String:Double]] ?? [:]
-            var resets=defaults.dictionary(forKey:"playbackResets.v1") as? [String:Double] ?? [:]
+            let previousPositions=defaults.dictionary(forKey:"playbackPositions.v1") as? [String:[String:Double]] ?? [:]
+            let previousResets=defaults.dictionary(forKey:"playbackResets.v1") as? [String:Double] ?? [:]
+            var positions=previousPositions
+            var resets=previousResets
             if value.state == "inProgress", let seconds=f["seconds"].flatMap(Double.init), let duration=f["duration"].flatMap(Double.init),
                seconds.isFinite, duration.isFinite, seconds>0, seconds<duration {
                 positions[key]=["seconds":seconds,"duration":duration,"updated":value.updated.timeIntervalSince1970]
@@ -422,11 +432,18 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
             if resets.count>500 {
                 for key in resets.keys.sorted(by:{ resets[$0]! > resets[$1]! }).dropFirst(500) { resets.removeValue(forKey:key) }
             }
-            defaults.set(positions,forKey:"playbackPositions.v1"); defaults.set(resets,forKey:"playbackResets.v1")
+            if positions != previousPositions { defaults.set(positions,forKey:"playbackPositions.v1") }
+            if resets != previousResets { defaults.set(resets,forKey:"playbackResets.v1") }
             PlaybackPositions(defaults: defaults).applySyncedSubtitle(value.state == "inProgress" ? f["subtitle"] : nil, for: key)
         case "setting":
-            if let value=f["displayAllFiles"] { defaults.set(value == "true",forKey:"displayAllFiles") }
-            if let value=f["showDebugInfo"] { defaults.set(value == "true",forKey:"showDebugInfo") }
+            // Registered UI defaults are not persisted cloud preferences.
+            let storedSettings = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
+            if let value=f["displayAllFiles"], storedSettings["displayAllFiles"] == nil || defaults.bool(forKey:"displayAllFiles") != (value == "true") {
+                defaults.set(value == "true",forKey:"displayAllFiles")
+            }
+            if let value=f["showDebugInfo"], storedSettings["showDebugInfo"] == nil || defaults.bool(forKey:"showDebugInfo") != (value == "true") {
+                defaults.set(value == "true",forKey:"showDebugInfo")
+            }
         default: break
         }
     }
@@ -515,7 +532,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
                 "digest":SHA256.hash(data:data).map { String(format:"%02x",$0) }.joined(),
                 "servers":active.filter { $0.kind == "server" }.count,
                 "credentials":active.filter { value in
-                    value.kind == "server" && ConnectionPreferences.shared.password(address:value.fields["server"] ?? "",username:value.fields["username"] ?? "",domain:value.fields["domain"] ?? "") != nil
+                    value.kind == "server" && ConnectionPreferences.shared.password(connectionID: value.fields["id"]) != nil
                 }.count,
                 "favorites":active.filter { $0.kind == "favorite" }.count,
                 "positions":active.filter { $0.kind == "position" && $0.state == "inProgress" }.count]

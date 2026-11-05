@@ -89,7 +89,7 @@ extension Notification.Name {
         guard let saved = connections.resolve(id: file.connectionID, server: file.server, username: file.username,
                 domain: file.domain, share: file.share),
               let remote = try? RemoteSession.make(server: saved.server, username: saved.username, domain: saved.domain,
-                password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "", timeout: 5) else { return }
+                password: connections.password(connectionID: saved.id) ?? "", timeout: 5) else { return }
         let flag = CancellationFlag()
         cancellation = flag; session = remote
         do {
@@ -124,11 +124,14 @@ extension Notification.Name {
         let entries = PlaybackPositions.shared.watching().map {
             TopShelfEntry(id: $0.id, title: $0.file?.name ?? "Saved video · \($0.id.prefix(6))", artwork: publishedArtwork($0.file))
         }
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        if (try? Data(contentsOf: url)) == data {
+        let previous = (try? Data(contentsOf: url)).flatMap {
+            try? JSONDecoder().decode([TopShelfEntry].self, from: $0)
+        }
+        if previous == entries {
             if force { TVTopShelfContentProvider.topShelfContentDidChange() }
             return
         }
+        guard let data = try? JSONEncoder().encode(entries) else { return }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)

@@ -142,10 +142,12 @@ struct PlaybackProgress {
     }
     /// Apply the subtitle field from the SAME cloud position record, retaining its timestamp.
     func applySyncedSubtitle(_ encoded: String?, for key: String) {
-        var subtitles = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
+        let previous = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
+        var subtitles = previous
         subtitles[key] = progress(for: key) == nil ? nil : SavedSubtitleSelection.decode(encoded)?.encoded
         let active = Set(allProgress().keys)
-        defaults.set(subtitles.filter { active.contains($0.key) }, forKey: Self.subtitleStorageKey)
+        subtitles = subtitles.filter { active.contains($0.key) }
+        if subtitles != previous { defaults.set(subtitles, forKey: Self.subtitleStorageKey) }
     }
 }
 

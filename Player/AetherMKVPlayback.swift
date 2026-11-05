@@ -120,8 +120,22 @@ final class AetherMKVPlayback {
                 if let preferredAudio { print("BORAMIN_AETHER preferred native audio stream=\(preferredAudio)") }
                 do {
                     try await engine.load(source: .custom(AetherFileReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
-                    if let item = engine.currentAVPlayer?.currentItem, item.status == .failed {
-                        throw item.error ?? PlayerError("The native player could not open this video.")
+                    // load() can return before AVFoundation parses the first HLS segments.
+                    // Keep startup readiness inside this catch so late configuration
+                    // rejections use the same single retry on every platform.
+                    if let item = engine.currentAVPlayer?.currentItem {
+                        let deadline = ProcessInfo.processInfo.systemUptime + 30
+                        while item.status == .unknown {
+                            try Task.checkCancellation()
+                            guard !source.cancellation.cancelled else { throw CancellationError() }
+                            guard ProcessInfo.processInfo.systemUptime < deadline else {
+                                throw PlayerError("Timed out waiting for native video playback to become ready.")
+                            }
+                            try await Task.sleep(for: .milliseconds(50))
+                        }
+                        if item.status == .failed {
+                            throw item.error ?? PlayerError("The native player could not open this video.")
+                        }
                     }
                 } catch {
                     try Task.checkCancellation()

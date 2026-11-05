@@ -107,6 +107,7 @@ enum HTTPReadPolicy {
         case .range(let range, _, _, _): return Int(range.count) }
     }
     func validate(_ response: HTTPURLResponse) throws {
+        guard (200..<300).contains(response.statusCode) else { throw HTTPStatusError(statusCode: response.statusCode) }
         let encoding = response.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()
         guard encoding == nil || encoding == "identity" else { throw PlayerError("The server returned encoded content instead of file bytes.") }
         switch self {
@@ -225,7 +226,6 @@ private final class BoundedHTTPClient: NSObject, URLSessionDataDelegate, @unchec
             transfer.completion(.success(HTTPResponse(data: transfer.data, response: response)))
         } catch {
             if (error as? URLError)?.code == .cancelled { transfer.completion(.failure(CancellationError())) }
-            else if error is URLError { transfer.completion(.failure(PlayerError("The HTTP request failed (network error \((error as NSError).code)). Check the connection and HTTPS certificate."))) }
             else { transfer.completion(.failure(error)) }
         }
     }

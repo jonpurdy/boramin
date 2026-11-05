@@ -179,19 +179,33 @@ struct ConnectionsList: View {
 private struct ConnectionDraft: Identifiable {
     var id = UUID().uuidString
     var name = ""
-    var server = ""
+    var address = ""
+    var path = ""
+    var port = String(ConnectionScheme.smb.defaultPort)
+    var httpScheme: ConnectionScheme = .https
     var username = ""
     var password = ""
     var domain = ""
     var share = ""
     var kind: ConnectionKind = .smb
     var existing = false
+    var scheme: ConnectionScheme { kind == .smb ? .smb : httpScheme }
     @MainActor init(connection: SavedConnection? = nil) {
         if let connection {
             kind = connection.kind
-            id = connection.id; name = connection.name; server = connection.server
+            id = connection.id; name = connection.name
+            if let parts = URLComponents(string: connection.server) {
+                httpScheme = parts.scheme == "http" ? .http : .https
+                path = parts.percentEncodedPath
+                // Hide the implied directory slash while preserving explicit repeated slashes.
+                if kind == .http, path.hasSuffix("/"), !parts.path.hasSuffix("//") {
+                    path.removeLast()
+                }
+                address = parts.percentEncodedHost ?? ""
+                port = String(parts.port ?? scheme.defaultPort)
+            }
             username = connection.username; domain = connection.domain; share = connection.share
-            password = ConnectionPreferences.shared.password(address: server, username: username, domain: domain) ?? ""
+            password = ConnectionPreferences.shared.password(connectionID: connection.id) ?? ""
             existing = true
         }
     }
@@ -208,19 +222,24 @@ private struct ConnectionEditor: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             #endif
-            .navigationTitle(draft.existing ? "Edit Connection" : "Add Connection")
             #if !os(tvOS)
+            .navigationTitle(draft.existing ? "Edit Connection" : "Add Connection")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save).disabled(draft.server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Save", action: save).disabled(draft.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             #endif
         }
+        .onChange(of: draft.scheme) { previous, current in
+            if draft.port.isEmpty || draft.port == String(previous.defaultPort) {
+                draft.port = String(current.defaultPort)
+            }
+        }
         #if os(macOS)
         .formStyle(.grouped)
-        .frame(width: 520, height: 480)
+        .frame(width: 520, height: 520)
         #endif
     }
     @ViewBuilder private var editorFields: some View {
@@ -228,38 +247,119 @@ private struct ConnectionEditor: View {
         // Native tvOS text fields already provide their own focusable chrome.
         // Form rows add a second container around each field.
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) { fields }
-                .padding(40)
+            VStack(alignment: .leading, spacing: 24) {
+                Text(draft.existing ? "Edit Connection" : "Add Connection")
+                    .font(.title2.bold())
+                    .accessibilityAddTraits(.isHeader)
+                    .frame(maxWidth: .infinity)
+                fields
+            }
+            .padding(40)
         }
         #else
         Form { fields }
         #endif
     }
+    private func pickerOption(_ title: String, selected: Bool) -> Text {
+        #if os(tvOS)
+        Text(verbatim: selected ? "✓ \(title)" : title)
+        #else
+        Text(title)
+        #endif
+    }
+
     @ViewBuilder private var fields: some View {
         if !draft.existing {
             Picker("Connection Type", selection: $draft.kind) {
-                ForEach(ConnectionKind.allCases) { kind in Text(kind.title).tag(kind) }
+                ForEach(ConnectionKind.allCases) { kind in
+                    pickerOption(kind.title, selected: draft.kind == kind).tag(kind)
+                }
             }
+            #if os(tvOS)
+            .pickerStyle(.segmented)
+            #endif
         }
-        TextField("Name (optional)", text: $draft.name)
-        TextField(draft.kind == .smb ? "Server" : "Base URL (https://server/media/)", text: $draft.server)
-        TextField(draft.kind == .smb ? "Username (empty for guest)" : "Username (optional)", text: $draft.username)
-        SecureField(draft.kind == .smb ? "Password" : "Password (optional)", text: $draft.password)
+        textField("Name (optional)", text: $draft.name)
+        if draft.kind == .http {
+            Picker("Protocol", selection: $draft.httpScheme) {
+                pickerOption("HTTP", selected: draft.httpScheme == .http).tag(ConnectionScheme.http)
+                pickerOption("HTTPS", selected: draft.httpScheme == .https).tag(ConnectionScheme.https)
+            }
+            #if os(tvOS)
+            .pickerStyle(.segmented)
+            #else
+            .pickerStyle(.menu)
+            #endif
+        }
+        textField("Address", text: $draft.address, prompt: Text("yourserver.local"))
+        textField("Port", text: $draft.port)
+        #if os(iOS)
+            .keyboardType(.numberPad)
+        #endif
+        if draft.kind == .http {
+            textField("Path (optional)", text: $draft.path)
+        }
+        textField("Username (optional)", text: $draft.username)
+        let passwordTitle: LocalizedStringKey = "Password (optional)"
+        labeledField(passwordTitle) {
+            SecureField(passwordTitle, text: $draft.password, prompt: emptyFieldPrompt)
+        }
         if draft.kind == .smb {
-            TextField("Domain (optional)", text: $draft.domain)
-            TextField("Share (optional)", text: $draft.share)
+            textField("Workgroup (optional)", text: $draft.domain)
+            textField("Share (optional)", text: $draft.share)
         }
         Text(draft.kind == .http ? "Browse a Caddy JSON file listing. HTTP connections are read-only. Passwords are saved in Keychain; use HTTPS to protect credentials and media in transit." : "Leave Share empty to browse the server’s shares. Passwords are saved in Keychain. Saving does not require the server to be online. Changes apply the next time you open the connection.")
             .font(.caption).foregroundStyle(.secondary)
         if let error { Text(error).foregroundStyle(.red) }
         #if os(tvOS)
-        Button("Save", action: save).disabled(draft.server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        Button("Save", action: save).disabled(draft.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         Button("Cancel") { dismiss() }
         #endif
     }
+
+    private var emptyFieldPrompt: Text? {
+        #if os(macOS)
+        nil
+        #else
+        Text(verbatim: "")
+        #endif
+    }
+
+    private func textField(_ title: LocalizedStringKey, text: Binding<String>, prompt: Text? = nil) -> some View {
+        labeledField(title) {
+            TextField(title, text: text, prompt: prompt ?? emptyFieldPrompt)
+        }
+    }
+
+    @ViewBuilder private func labeledField(_ title: LocalizedStringKey, @ViewBuilder input: () -> some View) -> some View {
+        #if os(macOS)
+        input()
+        #else
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            input()
+                .accessibilityLabel(Text(title))
+        }
+        #endif
+    }
+
     private func save() {
-        guard let url = ConnectionPreferences.connectionURL(draft.server), (url.scheme == "smb") == (draft.kind == .smb) else {
-            error = draft.kind == .smb ? "Enter a server name or IP address, such as smb://nas.local. Enter the share separately." : "Enter an HTTP or HTTPS base URL without credentials, a query, or a fragment."
+        guard let port = Int(draft.port.trimmingCharacters(in: .whitespacesAndNewlines)), (1...65535).contains(port) else {
+            error = "Enter a port number from 1 to 65535."
+            return
+        }
+        let address = draft.address.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = draft.path.trimmingCharacters(in: .whitespacesAndNewlines)
+        var endpoint = address
+        if draft.kind == .http, !path.isEmpty {
+            endpoint += path.hasPrefix("/") ? path : "/" + path
+        }
+        guard !address.contains("/"), !address.contains("?"), !address.contains("#"),
+              let url = draft.scheme.url(address: endpoint, port: port) else {
+            error = draft.kind == .smb ? "Enter a server name or IP address, such as yourserver.local. Use the Port and Share fields for those details." : "Enter an address such as yourserver.local. Use the Protocol, Port, and Path fields for those details."
             return
         }
         do {

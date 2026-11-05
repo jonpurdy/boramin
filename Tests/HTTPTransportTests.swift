@@ -21,6 +21,16 @@ import AVKit
               let base = URL(string: CommandLine.arguments[1]), let faults = URL(string: CommandLine.arguments[2]) else {
             throw PlayerError("Pass the isolated Caddy and fault-server URLs.")
         }
+        // Status failures must precede content/range validation and retain their codes.
+        for status in [401, 403, 404, 503] {
+            let response = HTTPURLResponse(url: base, statusCode: status, httpVersion: "HTTP/1.1",
+                                           headerFields: ["Content-Encoding": "gzip"])!
+            for policy in [HTTPReadPolicy.listing, .range(0..<1, size: 1, etag: nil, modified: nil)] {
+                do { try policy.validate(response); throw PlayerError("HTTP status accepted") }
+                catch let error as HTTPStatusError { try check(error.statusCode == status, "HTTP status lost") }
+            }
+        }
+        print("PASS: HTTP statuses preserved before listing, encoding and byte-range validation")
         let service = HTTPFileService(baseURL: base, username: "", password: "")
         defer { service.close() }
         let rows = try await service.readDirectory(path: "")

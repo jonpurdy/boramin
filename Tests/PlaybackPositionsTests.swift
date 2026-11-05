@@ -1,9 +1,17 @@
 import Foundation
 
+private final class CountingDefaults: UserDefaults, @unchecked Sendable {
+    var subtitleWrites = 0
+    override func set(_ value: Any?, forKey key: String) {
+        if key == "playbackSubtitles.v1" { subtitleWrites += 1 }
+        super.set(value, forKey: key)
+    }
+}
+
 @main struct PlaybackPositionsTests {
     @MainActor static func main() {
         let suite = "BoraMin.PositionTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = CountingDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = PlaybackPositions(defaults: defaults)
         let server = URL(string: "smb://NAS.local")!
@@ -107,7 +115,12 @@ import Foundation
         let recordTime = store.watching().first!.lastSaved
         store.applySyncedSubtitle(subtitle.encoded, for: key)
         precondition(store.subtitleSelection(for: key) == subtitle && store.watching().first!.lastSaved == recordTime)
+        let writes = defaults.subtitleWrites
+        precondition(writes > 0)
+        store.applySyncedSubtitle(subtitle.encoded, for: key)
+        precondition(defaults.subtitleWrites == writes, "An identical cloud subtitle must not generate another preference write")
         store.applySyncedSubtitle(nil, for: key) // Legacy client / no subtitle choice.
+        precondition(defaults.subtitleWrites == writes + 1, "Removing a cloud subtitle must still persist")
         precondition(store.subtitleSelection(for: key) == nil)
         store.applySyncedSubtitle("invalid JSON", for: key)
         precondition(store.subtitleSelection(for: key) == nil)

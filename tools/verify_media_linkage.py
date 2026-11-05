@@ -14,6 +14,10 @@ binary = contents / 'MacOS' / name if mac else contents / name
 legacy = contents / 'Frameworks/BoraMinMedia.framework/BoraMinMedia'
 def run(*args):
     return subprocess.check_output(args, text=True)
+# Xcode's Debug launcher loads the application code from a separate dylib.
+debug_binary = binary.with_name(f'{name}.debug.dylib')
+if debug_binary.exists() and debug_binary.name in run('otool', '-L', str(binary)):
+    binary = debug_binary
 exports = run('nm', '-gU', str(legacy))
 for line in exports.splitlines():
     symbol = line.split()[-1]

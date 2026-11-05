@@ -9,6 +9,29 @@ enum ConnectionKind: String, CaseIterable, Identifiable {
     var title: String { self == .smb ? "SMB" : "HTTP(S)" }
 }
 
+enum ConnectionScheme: String {
+    case smb, http, https
+
+    var defaultPort: Int {
+        switch self {
+        case .smb: 445
+        case .http: 80
+        case .https: 443
+        }
+    }
+
+    func url(address: String, port: Int) -> URL? {
+        let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        let authority = address.prefix { $0 != "/" }
+        guard !authority.isEmpty, !authority.hasSuffix(":"),
+              (1...65535).contains(port),
+              var parts = URLComponents(string: "\(rawValue)://\(address)"),
+              parts.port == nil else { return nil }
+        parts.port = port
+        return parts.string.flatMap(ConnectionPreferences.connectionURL)
+    }
+}
+
 struct SavedConnection: Identifiable, Equatable, Hashable {
     let id: String
     let server: String
@@ -49,6 +72,7 @@ struct SavedConnection: Identifiable, Equatable, Hashable {
         self.service = service
         migrateLegacyConnection()
         reload()
+        migrateLegacyPasswords()
         observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: defaults, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
@@ -58,28 +82,56 @@ struct SavedConnection: Identifiable, Equatable, Hashable {
         if server.scheme != "smb" {
             return ["http.v1", server.absoluteString, username]
         }
-        // Keep the original SMB identity byte-for-byte, including guest and domain rules.
+        // Legacy Keychain/profile identity only; current passwords are keyed by connection ID.
         return [server.host?.lowercased() ?? "", String(server.port ?? 445),
                 username.isEmpty ? "guest" : username, domain.lowercased()]
     }
 
-    private func query(server: URL, username: String, domain: String) -> [String: Any] {
-        let identity = Self.credentialIdentity(server: server, username: username, domain: domain)
+    private func query(identity: [String]) -> [String: Any] {
         let account = Data(identity.joined(separator: "\0").utf8).base64EncodedString()
         return [kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service, kSecAttrAccount as String: account]
     }
 
-    func password(address: String, username: String, domain: String) -> String? {
-        let raw = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let server = Self.connectionURL(raw) else { return nil }
-        var request = query(server: server, username: username, domain: domain)
+    private func credentialQuery(connectionID: String) -> [String: Any] {
+        query(identity: ["connection.v2", connectionID])
+    }
+
+    private func readCredential(_ query: [String: Any]) throws -> Data? {
+        var request = query
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
-        guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(request as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        }
+        return data
+    }
+
+    func password(connectionID: String?) -> String? {
+        guard let connectionID else { return nil }
+        guard let data = try? readCredential(credentialQuery(connectionID: connectionID)) else { return nil }
+        return try? JSONDecoder().decode(String.self, from: data)
+    }
+
+    private func migrateLegacyPasswords() {
+        guard !defaults.bool(forKey: "connectionCredentialsMigrated.v2") else { return }
+        do {
+            for connection in connections {
+                let target = credentialQuery(connectionID: connection.id)
+                guard try readCredential(target) == nil,
+                      let server = URL(string: connection.server),
+                      let data = try readCredential(query(identity: Self.credentialIdentity(
+                        server: server, username: connection.username, domain: connection.domain))),
+                      let password = String(data: data, encoding: .utf8) else { continue }
+                try storePassword(connectionID: connection.id, password: password)
+            }
+            defaults.set(true, forKey: "connectionCredentialsMigrated.v2")
+        } catch {
+            // Leave the legacy entries intact and retry next launch if Keychain is unavailable.
+        }
     }
 
     nonisolated static func profileID(server: URL, username: String, domain: String) -> String {
@@ -87,9 +139,10 @@ struct SavedConnection: Identifiable, Equatable, Hashable {
         return SHA256.hash(data:Data(identity.joined(separator:"\0").utf8)).map { String(format:"%02x",$0) }.joined()
     }
 
-    func storePassword(server: URL, username: String, domain: String, password: String) throws {
-        let request = query(server: server, username: username, domain: domain)
-        let data = Data(password.utf8)
+    func storePassword(connectionID: String, password: String) throws {
+        let request = credentialQuery(connectionID: connectionID)
+        // A JSON string keeps an intentionally empty password nonempty in Keychain too.
+        let data = try JSONEncoder().encode(password)
         var status = SecItemUpdate(request as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
             var item = request
@@ -125,7 +178,7 @@ struct SavedConnection: Identifiable, Equatable, Hashable {
               !parts.path.components(separatedBy: "/").contains(where: { $0 == "." || $0 == ".." }) else { return nil }
         parts.scheme = parts.scheme?.lowercased(); parts.host = host.lowercased()
         if parts.port == (parts.scheme == "https" ? 443 : 80) { parts.port = nil }
-        if !parts.path.hasSuffix("/") { parts.path += "/" }
+        if !parts.path.hasSuffix("/") { parts.percentEncodedPath += "/" }
         return parts.url
     }
 
@@ -159,9 +212,9 @@ struct SavedConnection: Identifiable, Equatable, Hashable {
               id.flatMap({ connection(id: $0) }).map({ $0.kind == kind }) ?? true else {
             throw NSError(domain: NSCocoaErrorDomain, code: NSValidationErrorMinimum, userInfo: [NSLocalizedDescriptionKey: "Enter a valid server URL. A saved connection’s type cannot be changed."])
         }
-        try storePassword(server: url, username: username, domain: domain, password: password)
+        let key = id ?? UUID().uuidString
+        try storePassword(connectionID: key, password: password)
         var profiles = defaults.dictionary(forKey: "serverProfiles.v1") as? [String: [String: String]] ?? [:]
-        let key = id ?? Self.profileID(server: url, username: username, domain: domain)
         var fields = ["id": key, "server": url.absoluteString, "username": username, "domain": domain,
                       "share": share, "name": name, "updated": String(Date().timeIntervalSince1970)]
         if kind == .http { fields["type"] = "http"; fields["domain"] = ""; fields["share"] = "" }
@@ -174,9 +227,10 @@ struct SavedConnection: Identifiable, Equatable, Hashable {
     func delete(id: String) {
         var profiles = defaults.dictionary(forKey: "serverProfiles.v1") as? [String: [String: String]] ?? [:]
         guard profiles.removeValue(forKey: id) != nil else { return }
+        SecItemDelete(credentialQuery(connectionID: id) as CFDictionary)
         defaults.set(profiles, forKey: "serverProfiles.v1")
         reload()
-        // Keep other profiles using the same Keychain account, favorites and history.
+        // Preserve other connections, favorites and history.
         // Clear legacy selection fields so deleting the last profile cannot restore it.
         if connections.isEmpty {
             for key in ["selectedConnectionID", "server", "username", "domain", "share"] { defaults.removeObject(forKey: key) }

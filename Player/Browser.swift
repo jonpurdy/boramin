@@ -64,21 +64,21 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
             connectionID = saved.id; host = saved.server; username = saved.username
             domain = saved.domain; directShare = saved.share
         }
-        password = connections.password(address: host, username: username, domain: domain) ?? ""
+        password = connections.password(connectionID: connectionID) ?? ""
     }
     func reloadSelectedConnection() {
         guard !connected, !busy else { return }
         connections.reload()
         guard let id = connectionID, let saved = connections.connection(id: id) else { return }
         host = saved.server; username = saved.username; domain = saved.domain; directShare = saved.share
-        password = connections.password(address: host, username: username, domain: domain) ?? ""
+        password = connections.password(connectionID: connectionID) ?? ""
     }
     func openConnection(_ saved: SavedConnection) {
         guard !busy, playing == nil else { return }
         disconnect()
         connectionID = saved.id; host = saved.server; username = saved.username
         domain = saved.domain; directShare = saved.share
-        password = connections.password(address: host, username: username, domain: domain) ?? ""
+        password = connections.password(connectionID: connectionID) ?? ""
         connections.select(saved)
         showingConnections = false; connectionNeedsSetup = false; connectionError = nil; error = nil
         beginConnection(preservingLocation: false)
@@ -110,7 +110,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
             catch is CancellationError { throw CancellationError() }
             catch {
                 try Task.checkCancellation()
-                connectionError = error.localizedDescription
+                connectionError = RemoteErrorMessage.message(for: error)
                 connectionNeedsSetup = Self.needsConnectionSetup(error)
                 let failure = error as NSError
                 browserLog.error("Connection failed domain=\(failure.domain, privacy: .public) code=\(failure.code)")
@@ -194,7 +194,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
             guard let saved = connections.resolve(id: favorite.connectionID, server: favorite.server, share: favorite.share),
                   let url = URL(string: saved.server),
                   let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
-                    password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "") else { throw PlayerError("This favorite’s connection is unavailable. Check Connections in Settings.") }
+                    password: connections.password(connectionID: saved.id) ?? "") else { throw PlayerError("This favorite’s connection is unavailable. Check Connections in Settings.") }
             let contents: [BrowserEntry]
             do {
                 contents = try await readDirectory(favorite.path, shareName: favorite.share, manager: manager, connection: saved)
@@ -204,7 +204,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
             let old = session
             session = manager; host = saved.server; connectionID = saved.id
             username = saved.username; domain = saved.domain
-            password = connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? ""
+            password = connections.password(connectionID: saved.id) ?? ""
             directShare = saved.share; showingConnections = false
             share = favorite.share; path = favorite.path; entries = contents; connected = true
             onOpen()
@@ -232,7 +232,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         metadataJobs.values.forEach { $0.cancel() }
         let old = session
         session = nil; connected = false; entries = []; shares = []; share = ""; path = ""
-        password = connections.password(address: host, username: username, domain: domain) ?? ""
+        password = connections.password(connectionID: connectionID) ?? ""
         Task { await old?.disconnect() }
     }
     private func ensureShareConnection(_ manager: RemoteSession, name: String) async throws {
@@ -242,7 +242,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
             try Task.checkCancellation()
             if manager === session, Self.needsConnectionSetup(error) {
                 connected = false; connectionNeedsSetup = true
-                connectionError = error.localizedDescription
+                connectionError = RemoteErrorMessage.message(for: error)
             }
             throw error
         }
@@ -292,7 +292,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
               let saved = connections.resolve(id: location.connectionID, server: location.server, share: location.share),
               let url = URL(string: saved.server),
               let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
-                    password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "", timeout: 5) else { return }
+                    password: connections.password(connectionID: saved.id) ?? "", timeout: 5) else { return }
         _ = try? await readDirectory(location.path, shareName: location.share, manager: manager, connection: saved)
         await manager.disconnect()
     }
@@ -304,7 +304,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
                     username: file.username, domain: file.domain, share: file.share),
                   let url = URL(string: saved.server),
                   let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
-                    password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "") else { throw PlayerError("This video’s connection is unavailable. Check Connections in Settings.") }
+                    password: connections.password(connectionID: saved.id) ?? "") else { throw PlayerError("This video’s connection is unavailable. Check Connections in Settings.") }
             var adopted = false
             defer { if !adopted { manager.abort() } }
             try await manager.connectShare(name: file.share)
@@ -325,7 +325,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
             session = manager; activeStream = media.streaming; playing = media
             adopted = true
             connectionID = saved.id; host = saved.server; username = saved.username; domain = saved.domain
-            password = connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? ""
+            password = connections.password(connectionID: saved.id) ?? ""
             Task { await old?.disconnect() }
         }
     }
@@ -384,7 +384,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
               let saved = connections.resolve(id: file.connectionID, server: file.server, username: file.username, domain: file.domain, share: file.share),
               let url = URL(string: saved.server),
               let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
-                    password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "", timeout: 5) else { return }
+                    password: connections.password(connectionID: saved.id) ?? "", timeout: 5) else { return }
         let flag = CancellationFlag(), job = UUID()
         metadataJobs[job] = flag
         defer { metadataJobs.removeValue(forKey: job) }
@@ -414,7 +414,7 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
                     username: file.username, domain: file.domain, share: file.share),
                   let url = URL(string: saved.server),
                   let manager = try? RemoteSession.make(server: url.absoluteString, username: saved.username, domain: saved.domain,
-                    password: connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? "") else { throw PlayerError("This video’s connection is unavailable. Check Connections in Settings.") }
+                    password: connections.password(connectionID: saved.id) ?? "") else { throw PlayerError("This video’s connection is unavailable. Check Connections in Settings.") }
             defer { Task { await manager.disconnect() } }
             try await manager.connectShare(name: file.share)
             let expected = BrowserEntry(name: file.name, path: file.path, directory: false, size: file.size)
@@ -475,9 +475,9 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
                                                EPIPE, ETIMEDOUT, ENETDOWN, ENETUNREACH, EHOSTDOWN, EHOSTUNREACH, ECONNREFUSED]
                 if invalidateConnectionOnFailure, failure.domain == NSPOSIXErrorDomain, transportCodes.contains(Int32(failure.code)) {
                     connected = false
-                    connectionError = error.localizedDescription
+                    connectionError = RemoteErrorMessage.message(for: error)
                 }
-                self.error = error.localizedDescription
+                self.error = RemoteErrorMessage.message(for: error)
             }
         }
     }

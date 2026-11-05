@@ -17,7 +17,7 @@ import AMSMB2
         if let index = CommandLine.arguments.firstIndex(of: "--test-connection-id"), CommandLine.arguments.count > index + 1,
            let saved = connections.connection(id: CommandLine.arguments[index + 1]) {
             connectionID = saved.id; host = saved.server; username = saved.username; domain = saved.domain
-            password = connections.password(address: saved.server, username: saved.username, domain: saved.domain) ?? ""
+            password = connections.password(connectionID: saved.id) ?? ""
         }
         if CommandLine.arguments.contains("--aether-diagnostics") {
             print("BORAMIN_DIAGNOSTICS smokeRequested=\(CommandLine.arguments.contains("--stream-smoke-test")) busy=\(busy)"); fflush(stdout)
