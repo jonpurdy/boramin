@@ -33,7 +33,7 @@ import AVKit
             if !media.usesSampleBufferVideo { item.add(output) }
             try await wait("playback starts") { player.currentTime().seconds > 0.5 }
             if media.usesSampleBufferVideo {
-                try await wait("MKV decoded video") { (view.sampleVideo?.queuedTime ?? -1) > 0.5 }
+                try await wait("MKV decoded video") { (controller.sampleVideo?.queuedTime ?? -1) > 0.5 }
             } else {
                 try await wait("native video pixels") { output.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil) != nil }
                 let audio = try await item.asset.loadMediaSelectionGroup(for: .audible)
@@ -48,7 +48,7 @@ import AVKit
             for target in [media.info.duration * 0.7, 1.0] {
                 guard await player.seek(to: CMTime(seconds: target, preferredTimescale: 60000), toleranceBefore: .zero, toleranceAfter: .zero) else { throw PlayerError("Seek failed.") }
                 if media.usesSampleBufferVideo {
-                    try await wait("MKV video after seek") { (view.sampleVideo?.queuedTime ?? -1) >= target && player.currentTime().seconds > target + 0.15 }
+                    try await wait("MKV video after seek") { (controller.sampleVideo?.queuedTime ?? -1) >= target && player.currentTime().seconds > target + 0.15 }
                 } else {
                     try await wait("native pixels after seek") { player.currentTime().seconds > target + 0.15 && output.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil) != nil }
                 }

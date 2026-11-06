@@ -163,6 +163,7 @@ private struct MacFilesView: View {
     let showConnection: () -> Void
     @AppStorage("displayAllFiles") private var allFiles = false
     @State private var selection = Set<String>()
+    @State private var speedTestEntry: BrowserEntry?
     @State private var fileToDelete: BrowserEntry?
     @State private var sortOrder = [KeyPathComparator(\MacFileRow.name, comparator: .localizedStandard)]
     @Environment(\.scenePhase) private var phase
@@ -190,12 +191,16 @@ private struct MacFilesView: View {
                     if favorites.contains(favorite) { Button("Remove Favorite") { favorites.remove(favorite) } }
                     else { Button("Favorite") { favorites.add(favorite) } }
                 }
+                if let entry = row.entry, !entry.directory, entry.size > 0, ids.count == 1 {
+                    Button("Speed test…", systemImage: "speedometer") { speedTestEntry = entry }
+                }
                 if let entry = row.entry, !entry.directory, browser.canDeleteFiles {
                     Button("Delete File…", role: .destructive) { fileToDelete = entry }
                 }
                 if let entry = row.entry, entry.progress != nil { Button("Reset Playback") { browser.resetPlayback(entry) } }
             }
         } primaryAction: { ids in if let row = rows.first(where: { ids.contains($0.id) }), !browser.busy { open(row) } }
+        .sheet(item: $speedTestEntry) { RemoteSpeedTestSheet(browser: browser, entry: $0) }
         .alert("Delete File?", isPresented: Binding(get: { fileToDelete != nil }, set: { if !$0 { fileToDelete = nil } }), presenting: fileToDelete) { entry in
             Button("Delete", role: .destructive) { browser.deleteFile(entry); fileToDelete = nil; selection.remove(entry.id) }
             Button("Cancel", role: .cancel) { fileToDelete = nil }

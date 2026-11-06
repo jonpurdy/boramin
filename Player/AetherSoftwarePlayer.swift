@@ -96,6 +96,14 @@ private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "So
     @AppStorage("showDebugInfo") private var showDebug = false
     @Environment(\.scenePhase) private var scenePhase
     #if os(tvOS)
+    @AppStorage("oledMode") private var oledMode = false
+    @AppStorage(OLEDDimming.key) private var oledDimming = OLEDDimming.defaultValue
+    @State private var userPaused = false
+    @State private var pauseDimmed = false
+    @State private var pauseTimerGeneration = 0
+    private var shouldDimPause: Bool {
+        oledMode && userPaused && engine.state == .paused && scenePhase == .active
+    }
     private enum PlaybackFocus: Hashable { case surface, timeline }
     @FocusState private var playbackFocus: PlaybackFocus?
     #endif
@@ -177,12 +185,15 @@ private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "So
             }
         }
         .onChange(of: engine.state, initial: true) { _, state in
+            #if os(tvOS)
+            if state == .playing { userPaused = false }
+            #endif
             switch state {
             case .ended: model.finish(); model.stop(); close()
             case .error(let message):
                 softwareLog.error("Software playback failed: \(message, privacy: .private)")
                 model.stop(); failure(message)
-            case .paused: activity()
+            case .paused: activity(wakeOLED: false)
             default: break
             }
         }
@@ -195,8 +206,34 @@ private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "So
         .onChange(of: controlsVisible) { _, visible in
             playbackFocus = visible ? .timeline : .surface
         }
-        .onPlayPauseCommand { engine.togglePlayPause(); activity() }
+        .overlay {
+            Color.black.opacity(shouldDimPause && pauseDimmed ? oledDimming.opacity : 0)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .task(id: shouldDimPause ? pauseTimerGeneration : nil) {
+            pauseDimmed = false
+            guard shouldDimPause else { return }
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            pauseDimmed = true
+        }
+        .onPlayPauseCommand {
+            userPaused = engine.state == .playing
+            engine.togglePlayPause()
+            activity(wakeOLED: false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIFocusSystem.didUpdateNotification)) { notification in
+            if let context = notification.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext,
+               !context.focusHeading.isEmpty {
+                restartPausedOLEDDimming()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIFocusSystem.movementDidFailNotification)) { _ in
+            restartPausedOLEDDimming()
+        }
         .onExitCommand {
+            restartPausedOLEDDimming()
             if controlsVisible { controlsVisible = false } else { model.stop(); close() }
         }
         #endif
@@ -234,7 +271,20 @@ private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "So
             #endif
         }
     }
-    private func activity() { lastInteraction = Date(); controlsVisible = true }
+    private func activity(wakeOLED: Bool = true) {
+        #if os(tvOS)
+        if wakeOLED { restartPausedOLEDDimming() }
+        #endif
+        lastInteraction = Date()
+        controlsVisible = true
+    }
+    #if os(tvOS)
+    private func restartPausedOLEDDimming() {
+        guard userPaused else { return }
+        pauseDimmed = false
+        pauseTimerGeneration += 1
+    }
+    #endif
     private func timecode(_ seconds: Double) -> String {
         let value = seconds.isFinite ? Int(max(0, min(seconds, Double(Int.max / 4)))) : 0
         return String(format: "%02d:%02d:%02d", value / 3600, value / 60 % 60, value % 60)

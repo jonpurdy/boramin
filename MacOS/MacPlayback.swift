@@ -9,16 +9,18 @@ private let macPlaybackLog = Logger(subsystem: "com.example.BoraMin", category: 
 /// AVKit owns the Mac transport, media menus and full-screen UI.
 /// The existing demuxed-video layer is placed in AVKit's public content overlay.
 final class MacPlayerView: AVPlayerView {
-    var sampleVideo: HardwareVideo?
     #if canImport(SwiftAssRenderer)
     var subtitleHost: PlaybackSubtitleHostingView?
     var subtitleMedia: PreparedMedia?
     #endif
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Let AVKit receive pointer movement in both the playback and full-screen windows.
+        window?.acceptsMouseMovedEvents = true
+    }
+
     override func layout() {
         super.layout()
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        sampleVideo?.layer.frame = contentOverlayView?.bounds ?? bounds
-        CATransaction.commit()
         #if canImport(SwiftAssRenderer)
         if let media = subtitleMedia, let host = subtitleHost {
             host.frame = contentOverlayView?.bounds ?? bounds
@@ -28,11 +30,36 @@ final class MacPlayerView: AVPlayerView {
     }
 }
 
+private final class MacPlaybackHostWindow: NSWindow {
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, event.clickCount == 2,
+           !styleMask.contains(.fullScreen), attachedSheet == nil,
+           let contentView,
+           let hit = contentView.hitTest(contentView.superview?.convert(event.locationInWindow, from: nil)
+                                         ?? event.locationInWindow),
+           !isPlaybackControl(hit, in: contentView) {
+            toggleFullScreen(nil)
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    private func isPlaybackControl(_ hit: NSView, in contentView: NSView) -> Bool {
+        var view: NSView? = hit
+        while let current = view, current !== contentView {
+            if current is NSControl { return true }
+            view = current.superview
+        }
+        return false
+    }
+}
+
 @MainActor final class MacPlaybackWindow: NSWindowController, NSWindowDelegate {
     static private(set) var current: MacPlaybackWindow?
     private let media: PreparedMedia
     private let playerView = MacPlayerView()
     private var player: AVPlayer
+    private(set) var sampleVideo: HardwareVideo?
     private let debugStats = PlaybackDebugStats()
     private var audioLoader: StreamingAudioLoader?
     private var fileLoader: StreamingFileLoader?
@@ -54,7 +81,7 @@ final class MacPlayerView: AVPlayerView {
     private var lastBytes: Int64 = 0
     private var onClose: (() -> Void)?
     private var keyboard: MacPlaybackKeyboard?
-    private var tracks: PlaybackTracks?
+    private(set) var tracks: PlaybackTracks?
     private var tracksHost: NSHostingView<PlaybackTracksButton>?
     #if canImport(AetherEngine)
     private var engineRouteObserver: AnyCancellable?
@@ -99,7 +126,7 @@ final class MacPlayerView: AVPlayerView {
         player = media.streaming?.aetherPlayer ?? AVPlayer(playerItem: item)
         player.appliesMediaSelectionCriteriaAutomatically = true
         if media.usesSampleBufferVideo && media.streaming != nil { player.automaticallyWaitsToMinimizeStalling = false }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 540), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let window = MacPlaybackHostWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 540), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init(window: window)
         macPlaybackLog.notice("Playback opened session=\(media.id.uuidString, privacy: .public) title=\(media.title, privacy: .private) sampleBuffer=\(media.usesSampleBufferVideo) codec=\(media.info.codec_type) size=\(media.info.width)x\(media.info.height) fps=\(media.info.frame_rate)")
         window.title = media.title; window.isReleasedWhenClosed = false
@@ -108,7 +135,14 @@ final class MacPlayerView: AVPlayerView {
         window.collectionBehavior = [.fullScreenPrimary]
         window.delegate = self
         window.contentView = playerView
-        keyboard = MacPlaybackKeyboard(view: playerView) { [weak self] offset in
+        keyboard = MacPlaybackKeyboard(view: playerView, togglePlayback: { [weak self] in
+            guard let self, !self.stopped, self.restored else { return }
+            if self.player.timeControlStatus == .paused {
+                self.player.play()
+            } else {
+                self.player.pause()
+            }
+        }) { [weak self] offset in
             guard let self, !self.stopped, self.restored,
                   let item = self.player.currentItem, item.status == .readyToPlay else { return }
             let current = self.player.currentTime().seconds
@@ -151,16 +185,21 @@ final class MacPlayerView: AVPlayerView {
         #endif
         if media.usesSampleBufferVideo {
             let video = HardwareVideo(path: media.source.path, remote: media.streaming?.source)
-            playerView.sampleVideo = video
-            playerView.contentOverlayView?.wantsLayer = true
-            playerView.contentOverlayView?.layer?.insertSublayer(video.layer, at: 0)
+            sampleVideo = video
+            if let overlay = playerView.contentOverlayView {
+                overlay.wantsLayer = true
+                video.layer.frame = overlay.bounds
+                // AVKit can resize the overlay after the player view lays out in full screen.
+                video.layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+                overlay.layer?.insertSublayer(video.layer, at: 0)
+            }
             video.failure = { [weak self] message in self?.fail(message) }
             notifications.append(NotificationCenter.default.addObserver(forName: AVPlayerItem.timeJumpedNotification, object: item, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, !self.stopped else { return }
                     let time = item.currentTime().seconds
                     self.media.streaming?.updateClock(time)
-                    self.playerView.sampleVideo?.seek(to: time)
+                    self.sampleVideo?.seek(to: time)
                 }
             })
         }
@@ -196,7 +235,7 @@ final class MacPlayerView: AVPlayerView {
                 if now - self.lastCheckpoint >= 15 {
                     let metrics = self.media.streaming?.source.transferMetrics
                     macPlaybackLog.notice("Playback health session=\(self.media.id.uuidString, privacy: .public) position=\(time.seconds) state=\(self.player.timeControlStatus.rawValue) residentBytes=\(media_process_resident_bytes()) cacheBytes=\(metrics?.cached ?? 0) cacheCapacity=\(metrics?.capacity ?? 0) fetchedBytes=\(metrics?.fetched ?? 0) thermal=\(ProcessInfo.processInfo.thermalState.rawValue)")
-                    self.playerView.sampleVideo?.logPerformance(sessionID: self.media.id)
+                    self.sampleVideo?.logPerformance(sessionID: self.media.id)
                     self.savePosition(); self.lastCheckpoint = now
                 }
             }
@@ -239,7 +278,7 @@ final class MacPlayerView: AVPlayerView {
                     }
                     guard !Task.isCancelled, !self.stopped else { return }
                     self.restored = true
-                    if let video = self.playerView.sampleVideo {
+                    if let video = self.sampleVideo {
                         guard let timebase = item.timebase else { self.fail("Player timeline unavailable."); return }
                         video.seek(to: item.currentTime().seconds)
                         video.start(timebase: timebase)
@@ -288,7 +327,7 @@ final class MacPlayerView: AVPlayerView {
         for observer in notifications + itemNotifications { NotificationCenter.default.removeObserver(observer) }; notifications.removeAll(); itemNotifications.removeAll()
         if let clock { player.removeTimeObserver(clock); self.clock = nil }
         if !preservingAetherSession { player.pause(); media.streaming?.stop(); player.replaceCurrentItem(with: nil) }
-        playerView.sampleVideo?.stop(); audioLoader?.stop(); fileLoader?.stop()
+        sampleVideo?.stop(); audioLoader?.stop(); fileLoader?.stop()
         playerView.player = nil
         let completion = onClose; onClose = nil; completion?()
         NotificationCenter.default.post(name: Notification.Name("BoraMinPlaybackSync"), object: nil)
@@ -360,7 +399,7 @@ final class MacPlayerView: AVPlayerView {
         let metrics = media.streaming?.source.transferMetrics ?? (fetched: 0, cached: 0, capacity: 0)
         let speed = Double(max(0, metrics.fetched - lastBytes)) / max(0.001, now - lastSampleTime) / 1_000_000
         debugLabel?.stringValue = String(format: " Network: %.2f MB/s \n Cache: %.1f / %.0f MiB \n Video: %d × %d, %.2f fps \n Decoder: %@ ", speed, Double(metrics.cached)/1048576, Double(metrics.capacity)/1048576, media.info.width, media.info.height, media.info.frame_rate, decoder)
-        debugLabel?.stringValue += "\n " + debugStats.lines(item: player.currentItem, video: playerView.sampleVideo).joined(separator: " \n ")
+        debugLabel?.stringValue += "\n " + debugStats.lines(item: player.currentItem, video: sampleVideo).joined(separator: " \n ")
         lastBytes = metrics.fetched; lastSampleTime = now
     }
 }
@@ -380,7 +419,7 @@ final class MacPlayerView: AVPlayerView {
     }
     private init(media: PreparedMedia, backend: AetherMKVPlayback, positions: PlaybackPositions, onClose: @escaping () -> Void) {
         self.model = AetherSoftwareModel(media: media, backend: backend, positions: positions); self.onClose = onClose
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 540), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let window = MacPlaybackHostWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 540), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init(window: window)
         window.title = media.title; window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 640, height: 360)
@@ -391,7 +430,9 @@ final class MacPlayerView: AVPlayerView {
             alert.beginSheetModal(for: window) { [weak self] _ in self?.close() }
         }))
         if let view = window.contentView {
-            keyboard = MacPlaybackKeyboard(view: view) { [weak self] offset in
+            keyboard = MacPlaybackKeyboard(view: view, togglePlayback: { [weak self] in
+                self?.model.engine.togglePlayPause()
+            }) { [weak self] offset in
                 guard let self else { return }
                 self.model.seek(to: self.model.engine.currentTime + offset)
             }

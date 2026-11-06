@@ -32,12 +32,14 @@ struct BrowserScreen: View {
     @StateObject private var favorites = Favorites()
     @StateObject private var cloud = ICloudSync.shared
     @State private var navigation: [Destination] = []
+    @State private var speedTestEntry: BrowserEntry?
     @State private var fileToDelete: BrowserEntry?
     @AppStorage("displayAllFiles") private var displayAllFiles = false
     @AppStorage("showDebugInfo") private var showDebugInfo = false
     #if os(tvOS)
     @AppStorage("expandFilenameImmediately") private var expandFilenameImmediately = false
     @AppStorage("oledMode") private var oledMode = false
+    @AppStorage(OLEDDimming.key) private var oledDimming = OLEDDimming.defaultValue
     #endif
     @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
@@ -177,6 +179,7 @@ struct BrowserScreen: View {
             .alert("Unable to continue", isPresented: Binding(get: { browser.error != nil }, set: { if !$0 { browser.error = nil } })) {
                 Button("OK") { browser.error = nil }
             } message: { Text(browser.error ?? "") }
+            .sheet(item: $speedTestEntry) { RemoteSpeedTestSheet(browser: browser, entry: $0) }
             .alert("Delete File?", isPresented: Binding(get: { fileToDelete != nil }, set: { if !$0 { fileToDelete = nil } }), presenting: fileToDelete) { entry in
                 Button("Delete", role: .destructive) { browser.deleteFile(entry); fileToDelete = nil }
                 Button("Cancel", role: .cancel) { fileToDelete = nil }
@@ -282,17 +285,21 @@ struct BrowserScreen: View {
                         } else {
                             ForEach(visibleEntries) { entry in
                                 Button {
-                                    if entry.directory { browser.openDirectory(entry.path) } else { browser.play(entry) }
+                                    if entry.directory { browser.openDirectory(entry.path) }
+                                    else if entry.playable { browser.play(entry) }
                                 } label: {
                                     mediaRow(symbol: entry.directory ? "folder" : "film", name: entry.name, progress: entry.progress) {
                                         if !entry.directory { Text(entry.playbackDetails) }
                                     }
-                                }.disabled(!entry.directory && !entry.playable)
+                                }
                                     .task(id: browser.metadataTaskID(entry)) { await browser.loadMetadata(entry) }
                                     .browserDefaultFocus(entry.id == firstFocusableEntry, in: listingFocus)
                                     .contextMenu {
                                         if entry.directory { favoriteMenu(browser.favoriteLocation(path: entry.path)) }
                                         else {
+                                            if entry.size > 0 {
+                                                Button("Speed test…", systemImage: "speedometer") { speedTestEntry = entry }
+                                            }
                                             if entry.playable {
                                                 Button("Reset playback", systemImage: "arrow.counterclockwise") {
                                                     browser.resetPlayback(entry)
@@ -352,6 +359,13 @@ struct BrowserScreen: View {
             Section {
                 Toggle("OLED Mode", isOn: $oledMode)
                     .toggleStyle(.switch)
+                if oledMode {
+                    Picker("OLED dimming", selection: $oledDimming) {
+                        ForEach(OLEDDimming.allCases, id: \.self) { level in
+                            Text(level.remainingBrightness, format: .percent).tag(level)
+                        }
+                    }
+                }
             } footer: {
                 Text("Dim screens after ten seconds of inactivity. Saved on this device.")
                     .font(.body).foregroundStyle(.secondary)
@@ -652,10 +666,22 @@ extension View {
 }
 
 #if os(tvOS)
+enum OLEDDimming: Int, CaseIterable {
+    case low = 25
+    case medium = 50
+    case high = 75
+
+    static let key = "oledDimming"
+    static let defaultValue = Self.medium
+    var remainingBrightness: Double { Double(rawValue) / 100 }
+    var opacity: Double { 1 - remainingBrightness }
+}
+
 private struct TVOLEDMode: ViewModifier {
     let active: Bool
     let location: Int
     @AppStorage("oledMode") private var enabled = false
+    @AppStorage(OLEDDimming.key) private var dimming = OLEDDimming.defaultValue
     @Environment(\.scenePhase) private var phase
     @State private var dimmed = false
     @State private var generation = 0
@@ -668,7 +694,7 @@ private struct TVOLEDMode: ViewModifier {
         content
             .overlay {
                 Color.black
-                    .opacity(enabled && active && dimmed ? 0.5 : 0)
+                    .opacity(enabled && active && dimmed ? dimming.opacity : 0)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
@@ -703,5 +729,62 @@ extension Color {
         #else
         .black
         #endif
+    }
+}
+
+
+struct RemoteSpeedTestSheet: View {
+    let browser: Browser
+    let entry: BrowserEntry
+    @Environment(\.dismiss) private var dismiss
+    @State private var bytes: Int64 = 0
+    @State private var fraction = 0.0
+    @State private var deadline: ContinuousClock.Instant?
+    @State private var sample: RemoteSpeedTest.Sample?
+    @State private var failure: String?
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Speed Test").font(.headline)
+            Text(entry.name).lineLimit(2)
+            if let sample {
+                Text("\(sample.megabytesPerSecond, format: .number.precision(.fractionLength(2))) MB/s")
+                    .font(.title)
+                Text("\(sample.megabytesPerSecond * 8, format: .number.precision(.fractionLength(2))) Mbps")
+                Text("\(sample.bytes.formatted()) bytes in \(sample.seconds, format: .number.precision(.fractionLength(3))) s")
+            } else if let failure {
+                Text("Speed test failed").font(.headline)
+                Text(failure)
+            } else if let deadline {
+                ProgressView(value: fraction) {
+                    Text("\(bytes.formatted()) bytes read")
+                }
+                TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+                    let remaining = ContinuousClock().now.duration(to: deadline)
+                    let parts = remaining.components
+                    let seconds = max(0, parts.seconds + (parts.attoseconds > 0 ? 1 : 0))
+                    Text("\(seconds) s remaining").monospacedDigit()
+                }
+            } else {
+                ProgressView("Connecting…")
+            }
+            Button(sample == nil && failure == nil ? "Cancel" : "Done") { dismiss() }
+        }
+        .multilineTextAlignment(.center)
+        .padding(30)
+        #if os(macOS)
+        .frame(minWidth: 400)
+        #endif
+        .task {
+            do {
+                sample = try await browser.speedTest(entry) { count, progress, end in
+                    bytes = count
+                    fraction = progress
+                    deadline = end
+                }
+            } catch {
+                if !Task.isCancelled { failure = RemoteErrorMessage.message(for: error) }
+            }
+        }
     }
 }

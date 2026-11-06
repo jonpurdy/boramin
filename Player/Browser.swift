@@ -393,6 +393,16 @@ private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Bro
         guard !Task.isCancelled, !flag.cancelled, let route = result.1 else { return }
         metadataCache.save(duration: result.0, route: route, modified: 0, for: key)
     }
+    func speedTest(_ entry: BrowserEntry,
+                   progress: @escaping @MainActor @Sendable (Int64, Double, ContinuousClock.Instant) -> Void) async throws -> RemoteSpeedTest.Sample {
+        guard connected, let session, !entry.directory, entry.size > 0 else {
+            throw PlayerError("The file’s connection is unavailable.")
+        }
+        let benchmark = try RemoteSession.make(server: session.url.absoluteString, username: username,
+                                               domain: domain, password: password)
+        return try await RemoteSpeedTest.run(session: benchmark, share: share, path: entry.path, progress: progress)
+    }
+
     func deleteFile(_ entry: BrowserEntry) {
         guard !busy, playing == nil, !entry.directory, let session, session.canDelete,
               entries.contains(where: { $0.path == entry.path && !$0.directory }) else { return }

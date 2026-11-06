@@ -42,15 +42,9 @@ For MKV/WebM, add a streaming remux stage that exposes seekable MP4/fMP4 to AVPl
 
 Native AVPlayerViewController supplies its standard video gestures for native video tracks. No production gesture or rendering change is part of this investigation.
 
-## Reproduction
+## Historical diagnostic
 
-Source: `Tests/NativeVP9Probe.swift`, intentionally outside all production source globs. Generate fixtures and an isolated project with:
-
-```sh
-python3 tools/create_native_vp9_probe.py --make-fixtures
-```
-
-This uses the adjacent lab's original MKV and host FFmpeg, placing generated media/project under ignored `build/NativeVP9Probe/`. Build scheme NativeVP9Probe for generic iOS or tvOS with separate derived-data directories. The diagnostic bundle ID is `com.example.BoraMin.NativeVP9Probe`. Normal launch tests six short variants; `--long-only` tests longer playback, pause and seek. Build and run the probe on physical devices; simulator results cannot establish device hardware behavior.
+The standalone native AVPlayer VP9 probe and its fixture generator were removed from the 0.6.2 baseline. The results above came from physical devices.
 
 Console evidence: `/tmp/boramin-native-vp9-{ios,tv}-run.log` and `/tmp/boramin-native-vp9-{ios,tv}-long.log`. Build logs: `/tmp/boramin-native-vp9-{ios,tv}-build.log`. Attached-console timeouts end observation and do not indicate an app crash.
 
@@ -62,4 +56,4 @@ Console evidence: `/tmp/boramin-native-vp9-{ios,tv}-run.log` and `/tmp/boramin-n
 
 ## Follow-up
 
-The opt-in SMB/fMP4/HLS prototype and its device comparison are documented in [Streaming-remux-investigation.md](Streaming-remux-investigation.md). The unchanged-production-code statements above describe the original isolated MP4 investigation; the follow-up adds a launch-flag-only adapter while retaining the default path.
+The follow-up SMB/fMP4/HLS prototype was opt-in and has since been retired.

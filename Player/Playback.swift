@@ -749,6 +749,9 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     private var tracks: PlaybackTracks?
     #endif
     #if os(tvOS)
+    private var oledUserPaused = false
+    private var oledPauseTask: Task<Void, Never>?
+    private let oledPauseOverlay = UIView()
     private var displayManager: AVDisplayManager?
     private var tracksMenuSubscription: AnyCancellable?
     #endif
@@ -996,9 +999,15 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
                 }
             }
         }
+        #if os(tvOS)
+        installPausedOLEDDimming()
+        #endif
         playbackObservation = player?.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] _, _ in
             DispatchQueue.main.async {
                 guard let self, !self.stopped else { return }
+                #if os(tvOS)
+                self.updatePausedOLEDStatus(self.player?.timeControlStatus)
+                #endif
                 if self.player?.timeControlStatus == .playing { self.startedPlayback = true }
                 else if self.player?.timeControlStatus == .paused && self.startedPlayback {
                     self.savePosition()
@@ -1008,6 +1017,75 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             }
         }
     }
+    #if os(tvOS)
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        restartPausedOLEDDimming()
+        super.pressesBegan(presses, with: event)
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        if !context.focusHeading.isEmpty { restartPausedOLEDDimming() }
+    }
+
+    private func installPausedOLEDDimming() {
+        guard let overlay = contentOverlayView else { return }
+        oledPauseOverlay.frame = overlay.bounds
+        oledPauseOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        oledPauseOverlay.backgroundColor = .black
+        oledPauseOverlay.alpha = 0
+        oledPauseOverlay.isUserInteractionEnabled = false
+        overlay.addSubview(oledPauseOverlay)
+        diagnosticsObservers.append(NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.timeJumpedNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let item = self.player?.currentItem, note.object as? AVPlayerItem === item else { return }
+                self.restartPausedOLEDDimming()
+            }
+        })
+        diagnosticsObservers.append(NotificationCenter.default.addObserver(
+            forName: AVPlayer.rateDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let player = self.player, note.object as? AVPlayer === player else { return }
+                self.oledUserPaused = self.startedPlayback && player.rate == 0
+                    && note.userInfo?[AVPlayer.rateDidChangeReasonKey] as? AVPlayer.RateDidChangeReason == .setRateCalled
+                self.restartPausedOLEDDimming()
+            }
+        })
+    }
+
+    private func restartPausedOLEDDimming() {
+        clearPausedOLEDDimming()
+        guard active, oledUserPaused, let player,
+              UserDefaults.standard.bool(forKey: "oledMode") else { return }
+        oledPauseTask = Task { @MainActor [weak self, weak player] in
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            guard let self, let player, self.active, self.player === player,
+                  player.timeControlStatus == .paused,
+                  self.view.window?.windowScene?.activationState == .foregroundActive else { return }
+            let dimming = OLEDDimming(rawValue: UserDefaults.standard.integer(forKey: OLEDDimming.key))
+                ?? OLEDDimming.defaultValue
+            self.oledPauseOverlay.alpha = CGFloat(dimming.opacity)
+        }
+    }
+
+    private func updatePausedOLEDStatus(_ status: AVPlayer.TimeControlStatus?) {
+        if status == .playing { oledUserPaused = false }
+        if status == .paused {
+            if oledPauseTask == nil { restartPausedOLEDDimming() }
+        } else {
+            clearPausedOLEDDimming()
+        }
+    }
+
+    private func clearPausedOLEDDimming() {
+        oledPauseTask?.cancel()
+        oledPauseTask = nil
+        oledPauseOverlay.alpha = 0
+    }
+    #endif
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
         playbackLog.warning("Memory warning session=\(self.media.id.uuidString, privacy: .public) residentBytes=\(media_process_resident_bytes())")
@@ -1169,6 +1247,10 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             guard let self, self.active, let backend else { return }
             if let token = self.clockObserver { self.player?.removeTimeObserver(token); self.clockObserver = nil }
             self.playbackObservation = nil
+            #if os(tvOS)
+            self.oledUserPaused = false
+            self.clearPausedOLEDDimming()
+            #endif
             self.player = player
             self.clockObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
                 guard let self, !self.stopped else { return }
@@ -1189,6 +1271,9 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             self.playbackObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
                 DispatchQueue.main.async {
                     guard let self, self.active else { return }
+                    #if os(tvOS)
+                    self.updatePausedOLEDStatus(player.timeControlStatus)
+                    #endif
                     if player.timeControlStatus == .playing { self.startedPlayback = true }
                     if player.timeControlStatus == .paused { self.savePosition() }
                 }
@@ -1471,6 +1556,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         if let ended { NotificationCenter.default.removeObserver(ended); self.ended = nil }
         if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver); self.backgroundObserver = nil }
         #if os(tvOS)
+        clearPausedOLEDDimming()
         displayManager?.preferredDisplayCriteria = nil
         #endif
         readiness = nil; failureObservation = nil

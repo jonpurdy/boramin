@@ -6,13 +6,15 @@ The interface uses NavigationSplitView, native tables/selection, toolbar navigat
 
 | Shortcut | Action |
 | --- | --- |
+| Double-click playback content | Enter full screen |
+| Space (playback window) | Play / pause |
 | Left / Right (playback window) | Seek backward / forward 10 seconds |
 | Command-Up | Enclosing folder |
 | Command-R | Refresh |
 | Command-K | Connections |
 | Command-comma | Settings |
 
-SMB, caching, bookmarks, credentials, iCloud, and playback engines are shared. Native sessions use AVPlayerView; software sessions use the shared fallback controls. Audio & Subtitles uses a popover. Current routing and limitations are in the [main README](../README.md), [AetherEngine guide](../docs/AetherEngine-playback.md), and subtitle guides.
+SMB, caching, bookmarks, credentials, iCloud, and playback engines are shared. Native sessions use AVPlayerView, and separately rendered video follows its overlay size in windowed and full-screen playback; software sessions use the shared fallback controls. Audio & Subtitles uses a popover. Current routing and limitations are in the [main README](../README.md), [AetherEngine guide](../docs/AetherEngine-playback.md), and subtitle guides.
 
 ## Build
 

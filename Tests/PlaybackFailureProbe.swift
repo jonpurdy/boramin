@@ -58,11 +58,289 @@ private final class ProbeFrames: @unchecked Sendable {
             next = current.userInfo[NSUnderlyingErrorKey] as? NSError
         }
     }
+    private struct LiveCheckError: Error {
+        let message: String
+        init(_ message: String) { self.message = message }
+    }
+
+    static func livePlayback() async throws {
+        let preferenceURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+            "Library/Containers/com.example.BoraMin/Data/Library/Preferences/com.example.BoraMin.plist")
+        let saved = try PropertyListSerialization.propertyList(from: Data(contentsOf: preferenceURL), format: nil)
+        guard let profiles = (saved as? [String: Any])?["serverProfiles.v1"] as? [String: [String: String]] else {
+            throw LiveCheckError("Saved BoraMin profiles unavailable.")
+        }
+        let suite = "BoraMinLivePlayback-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(profiles, forKey: "serverProfiles.v1")
+        defaults.set(true, forKey: "connectionCredentialsMigrated.v2")
+        let connections = ConnectionPreferences(defaults: defaults)
+        let transports: [(String, String, ConnectionKind)] = [
+            ("SMB", "SAVED_SMB_CONNECTION_ID", .smb),
+            ("HTTP", "SAVED_HTTP_CONNECTION_ID", .http),
+        ]
+        let fixtures: [(folder: String, file: String, subtitle: String?)] = [
+            ("hevc 4k atmos mkv", "surround.mkv", nil),
+            ("same codecs, different container", "fallback.mkv", "fallback.srt"),
+            ("same codecs, different container", "fallback.mp4", "fallback.srt"),
+            ("vp9 4k hdr 60fps", "hardware-vp9.mkv", nil),
+            ("mkv ass subs", "external-ass.mp4", "external-ass.ass"),
+            ("avi xvid", "legacy.avi", nil),
+        ]
+        var failures = 0
+        for (label, id, kind) in transports {
+            do {
+                guard let profile = connections.connection(id: id), profile.kind == kind else {
+                    throw LiveCheckError("Expected saved connection unavailable.")
+                }
+                let session = try RemoteSession.make(server: profile.server, username: profile.username,
+                    domain: profile.domain, password: connections.password(connectionID: id) ?? "")
+                defer { session.abort() }
+                if kind == .smb { try await session.connectShare(name: "media") }
+                let folders = Set(fixtures.map(\.folder))
+                var base = "playback-tests"
+                if kind == .http {
+                    let rootFolders = Set(try await session.readDirectory(path: "").filter(\.directory).map(\.name))
+                    if rootFolders.contains("_boramin_testing") {
+                        base = "_boramin_testing"
+                    } else if !rootFolders.isDisjoint(with: folders) {
+                        base = ""
+                    }
+                }
+                let prefix = base.isEmpty ? "" : base + "/"
+                let expected = Set(fixtures.flatMap { fixture in
+                    [fixture.file, fixture.subtitle].compactMap { $0 }.map { "\(fixture.folder)/\($0)" }
+                })
+                var actual = Set<String>()
+                for entry in try await session.readDirectory(path: base) where !entry.name.hasPrefix(".") {
+                    if entry.directory {
+                        for child in try await session.readDirectory(path: prefix + entry.name) where !child.name.hasPrefix(".") && (child.directory || child.size > 0) {
+                            actual.insert("\(entry.name)/\(child.name)" + (child.directory ? "/" : ""))
+                        }
+                    } else if entry.size > 0 {
+                        actual.insert(entry.name)
+                    }
+                }
+                if actual != expected {
+                    print("FAIL \(label) inventory missing=\(expected.subtracting(actual).sorted()) unexpected=\(actual.subtracting(expected).sorted())")
+                    failures += 1
+                }
+                for fixture in fixtures {
+                    let path = "\(prefix)\(fixture.folder)/\(fixture.file)"
+                    print("START \(label) \(fixture.file)")
+                    do {
+                        let route = try await verifyLiveFile(session, path: path, subtitle: fixture.subtitle,
+                            hardwareVP9: fixture.folder == "vp9 4k hdr 60fps",
+                            checkASS: kind == .smb && fixture.subtitle?.hasSuffix(".ass") == true,
+                            checkAudio: kind == .smb && fixture.folder == "hevc 4k atmos mkv")
+                        print("PASS \(label) \(fixture.file) [\(route)]")
+                    } catch {
+                        print("FAIL \(label) \(fixture.file)")
+                        if let error = error as? LiveCheckError { print("CHECK \(error.message)") }
+                        errors(error)
+                        failures += 1
+                    }
+                }
+            } catch {
+                print("INCOMPLETE \(label) fixture access")
+                errors(error)
+                failures += 1
+            }
+        }
+        guard failures == 0 else { throw LiveCheckError("Live playback suite has \(failures) failed or incomplete checks.") }
+    }
+
+    static func verifyLiveFile(_ session: RemoteSession, path: String, subtitle: String?, hardwareVP9: Bool,
+                               checkASS: Bool, checkAudio: Bool) async throws -> String {
+        let entry = try await session.attributes(path: path)
+        let media = try await PreparedMedia.stream(session: session, path: path, size: entry.size,
+            title: entry.name, directory: Browser.cache, cancellation: CancellationFlag())
+        defer {
+            MacPlaybackWindow.current?.close()
+            MacSoftwarePlaybackWindow.current?.close()
+            media.streaming?.stop()
+        }
+        var subtitleTrackID: String?
+        if let subtitle {
+            guard let track = media.streaming?.externalSubtitles?.tracks.first(where: {
+                ($0.id as NSString).lastPathComponent == subtitle
+            }), try await !track.load(CancellationFlag()).isEmpty else {
+                throw LiveCheckError("Expected external subtitle is missing or empty.")
+            }
+            subtitleTrackID = track.id
+        }
+        if hardwareVP9, (!media.usesSampleBufferVideo || media.info.vp9 == 0) {
+            throw LiveCheckError("Expected dedicated VP9 hardware playback.")
+        }
+        MacPlaybackWindow.present(media: media) { }
+        let frames = ProbeFrames()
+        let engine = media.streaming?.aetherPlayback?.engine
+        engine?.setSoftwareVideoFrameTimeObserver { frames.record($0) }
+        defer { engine?.setSoftwareVideoFrameTimeObserver(nil) }
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
+        var attachedItem: AVPlayerItem?
+        func displayedBuffer(in layer: CALayer) -> CVPixelBuffer? {
+            if let layer = layer as? AVSampleBufferDisplayLayer {
+                return layer.sampleBufferRenderer.displayedPixelBuffer()
+            }
+            return layer.sublayers?.lazy.compactMap { displayedBuffer(in: $0) }.first
+        }
+        func displayedBuffer(in view: NSView) -> CVPixelBuffer? {
+            view.layer.flatMap { displayedBuffer(in: $0) }
+                ?? view.subviews.lazy.compactMap { displayedBuffer(in: $0) }.first
+        }
+        func verifyFrames(after target: Double) async throws {
+            var firstFrame: Double?
+            var firstPixel: CVPixelBuffer?
+            frames.reset()
+            for _ in 0..<300 {
+                if MacSoftwarePlaybackWindow.current != nil {
+                    if let span = frames.span, span.0 >= target - 1, span.1 < target + 5,
+                       span.1 > span.0 + 0.25,
+                       let view = MacSoftwarePlaybackWindow.current?.window?.contentView,
+                       let pixel = displayedBuffer(in: view) {
+                        if let firstPixel, firstPixel !== pixel { return }
+                        firstPixel = pixel
+                    }
+                } else if let controller = MacPlaybackWindow.current,
+                          let player = (controller.window?.contentView as? MacPlayerView)?.player,
+                          let item = player.currentItem {
+                    let time = player.currentTime()
+                    var frame: Double?
+                    var pixel: CVPixelBuffer?
+                    if let video = controller.sampleVideo {
+                        if let displayed = video.layer.sampleBufferRenderer.displayedPixelBuffer(),
+                           abs(video.queuedTime - time.seconds) < 1 {
+                            pixel = displayed
+                            frame = video.queuedTime
+                        }
+                    } else if !hardwareVP9 {
+                        if attachedItem !== item {
+                            attachedItem?.remove(output)
+                            item.add(output)
+                            attachedItem = item
+                        }
+                        var displayedTime = CMTime.invalid
+                        if let displayed = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: &displayedTime) {
+                            pixel = displayed
+                            frame = displayedTime.seconds
+                        }
+                    }
+                    if let pixel, let frame, frame >= target - 0.25, frame < target + 5 {
+                        if let firstFrame, let firstPixel, frame > firstFrame + 0.25, firstPixel !== pixel { return }
+                        if firstFrame == nil {
+                            firstFrame = frame
+                            firstPixel = pixel
+                        }
+                    }
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            throw LiveCheckError("Advancing video frames were not observed near \(target)s.")
+        }
+        try await verifyFrames(after: 0)
+        if checkAudio {
+            guard let tracks = MacPlaybackWindow.current?.tracks else {
+                throw LiveCheckError("surround fixture audio controls unavailable.")
+            }
+            for _ in 0..<100 {
+                if tracks.audio.contains(where: { $0.supported && $0.id != tracks.selectedAudio }) { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            guard let alternate = tracks.audio.first(where: { $0.supported && $0.id != tracks.selectedAudio }) else {
+                throw LiveCheckError("No alternate supported surround fixture audio track.")
+            }
+            tracks.selectAudio(alternate.id)
+            for _ in 0..<100 {
+                if engine?.activeAudioTrackIndex == alternate.id { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            guard engine?.activeAudioTrackIndex == alternate.id else { throw LiveCheckError("Audio selection did not take effect.") }
+        }
+        let targets = [min(60, media.info.duration / 2), 3.0]
+        if MacSoftwarePlaybackWindow.current != nil, let engine {
+            guard !hardwareVP9 else { throw LiveCheckError("Expected dedicated VP9 hardware playback.") }
+            engine.togglePlayPause()
+            // Allow the software clock to publish its final position after the pause request.
+            // Require a continuous stationary interval before accepting the pause.
+            var paused = engine.currentTime
+            var stableSamples = 0
+            for _ in 0..<20 {
+                try await Task.sleep(for: .milliseconds(100))
+                let time = engine.currentTime
+                if engine.state == .paused, abs(time - paused) < 0.05 {
+                    stableSamples += 1
+                    if stableSamples == 4 { break }
+                } else {
+                    stableSamples = 0
+                    paused = time
+                }
+            }
+            guard stableSamples == 4 else { throw LiveCheckError("Pause did not hold.") }
+            engine.togglePlayPause()
+            try await verifyFrames(after: paused)
+            for target in targets {
+                await engine.seek(to: target)
+                engine.play()
+                try await verifyFrames(after: target)
+            }
+        } else if let player = (MacPlaybackWindow.current?.window?.contentView as? MacPlayerView)?.player {
+            if checkASS, let subtitles = media.streaming?.externalSubtitles, let subtitleTrackID {
+                subtitles.select("external:" + subtitleTrackID)
+                for _ in 0..<100 {
+                    if subtitles.ready { break }
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                player.pause()
+                guard await player.seek(to: CMTime(seconds: 1.5, preferredTimescale: 600),
+                                        toleranceBefore: .zero, toleranceAfter: .zero) else {
+                    throw LiveCheckError("Seek to ASS cue failed.")
+                }
+                for _ in 0..<100 {
+                    if subtitles.frame != nil { break }
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                guard subtitles.frame != nil else { throw LiveCheckError("ASS cue did not produce a subtitle bitmap.") }
+            }
+            player.pause()
+            let paused = player.currentTime().seconds
+            try await Task.sleep(for: .milliseconds(400))
+            guard abs(player.currentTime().seconds - paused) < 0.15 else { throw LiveCheckError("Pause did not hold.") }
+            player.play()
+            try await verifyFrames(after: paused)
+            for target in targets {
+                guard await player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
+                                        toleranceBefore: .zero, toleranceAfter: .zero) else {
+                    throw LiveCheckError("Seek failed.")
+                }
+                try await verifyFrames(after: target)
+            }
+        } else {
+            throw LiveCheckError("Playback window closed before controls could be exercised.")
+        }
+        if hardwareVP9 { return "VideoToolbox hardware VP9" }
+        if MacSoftwarePlaybackWindow.current != nil { return "AetherEngine software route" }
+        return engine == nil ? "AVPlayer" : "AetherEngine native route"
+    }
+
     static func main() async throws {
         setbuf(stdout, nil)
         _ = NSApplication.shared; NSApp.setActivationPolicy(.accessory)
         let mode = CommandLine.arguments.dropFirst().first ?? "blade"
-        let path = mode.hasPrefix("kpop") ? "playback-tests/compatibility/fallback\(mode == "kpop-remux" ? " remuxed" : "").mkv" : "playback-tests/surround/surround.mp4"
+        if mode == "live" {
+            do { try await livePlayback() }
+            catch { errors(error); exit(1) }
+            return
+        }
+        let fixtureRoot = "playback-tests"
+        let path: String
+        if mode.hasPrefix("kpop") {
+            let suffix = mode == "kpop-remux" ? " remuxed" : ""
+            path = "\(fixtureRoot)/same codecs, different container/fallback\(suffix).mkv"
+        } else {
+            path = "\(fixtureRoot)/hevc 4k atmos mkv/surround.mkv"
+        }
         let pref = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Containers/com.example.BoraMin/Data/Library/Preferences/com.example.BoraMin.plist")
         let saved = try PropertyListSerialization.propertyList(from: Data(contentsOf: pref), format: nil) as! [String: Any]
         let suite = "BoraMinPlaybackFailureProbe-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
@@ -71,6 +349,8 @@ private final class ProbeFrames: @unchecked Sendable {
         let store = ConnectionPreferences(defaults: defaults)
         var media: PreparedMedia?
         for connection in store.connections {
+            if CommandLine.arguments.contains("--audio-continuity"),
+               connection.id != "SAVED_SMB_CONNECTION_ID" { continue }
             let browser = Browser(connections: store, metadataCache: MediaMetadataCache(defaults: defaults))
             guard let url = URL(string: connection.server) else { continue }
             let client = AMSMB2.SMB2Manager(url: url, domain: connection.domain, credential: URLCredential(user: connection.username.isEmpty ? "guest" : connection.username, password: store.password(connectionID: connection.id) ?? "", persistence: .none))!
@@ -127,6 +407,60 @@ private final class ProbeFrames: @unchecked Sendable {
         guard let media, let stream = media.streaming else { throw PlayerError("No source prepared") }
         defer { stream.stop() }
         print("PREPARED vp9=\(media.info.vp9) codec=\(media.info.codec_type) aether=\(stream.aetherPlayback != nil)")
+        if CommandLine.arguments.contains("--audio-continuity") {
+            guard let backend = stream.aetherPlayback, backend.player == nil else {
+                throw PlayerError("Audio continuity diagnostic requires the Aether software route.")
+            }
+            let engine = backend.engine
+            MacPlaybackWindow.present(media: media) { }
+            defer { MacSoftwarePlaybackWindow.current?.close() }
+            for _ in 0..<200 {
+                if engine.currentTime > 0.2 { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            let start = CommandLine.arguments.first(where: { $0.hasPrefix("--audio-start=") })
+                .flatMap { Double($0.dropFirst("--audio-start=".count)) }
+            let end = CommandLine.arguments.first(where: { $0.hasPrefix("--audio-end=") })
+                .flatMap { Double($0.dropFirst("--audio-end=".count)) }
+            guard let start, let end, start.isFinite, end.isFinite, start >= 0, end > start, end - start <= 180 else {
+                throw PlayerError("Supply --audio-start and --audio-end in playback seconds, at most 180 seconds apart.")
+            }
+            await engine.seek(to: start)
+            let tap = engine.installAudioTap()
+            let collector = Task {
+                var bucket = -1
+                var peak: Float = 0
+                var frames = 0
+                var previousEnd: Double?
+                for await sample in tap {
+                    guard sample.sourceTime.isFinite, let channel = sample.buffer.floatChannelData?[0] else { continue }
+                    let second = Int(sample.sourceTime)
+                    if second != bucket {
+                        if bucket >= 0 { print("AUDIO_PCM second=\(bucket) frames=\(frames) peak=\(peak)") }
+                        bucket = second
+                        frames = 0
+                        peak = 0
+                    }
+                    if let previousEnd, sample.sourceTime - previousEnd > 0.2 {
+                        print("AUDIO_TAP_GAP at=\(previousEnd) seconds=\(sample.sourceTime - previousEnd)")
+                    }
+                    let count = Int(sample.buffer.frameLength)
+                    for index in 0..<count { peak = max(peak, abs(channel[index])) }
+                    frames += count
+                    previousEnd = sample.sourceTime + Double(count) / sample.buffer.format.sampleRate
+                }
+            }
+            defer { collector.cancel(); engine.removeAudioTap() }
+            engine.play()
+            let deadline = ProcessInfo.processInfo.systemUptime + 240
+            while engine.currentTime < end, ProcessInfo.processInfo.systemUptime < deadline {
+                if case .error = engine.state { throw PlayerError("Audio continuity playback failed.") }
+                try await Task.sleep(for: .seconds(1))
+            }
+            print("AUDIO_END playhead=\(engine.currentTime)")
+            guard engine.currentTime >= end else { throw PlayerError("Audio continuity playback timed out.") }
+            return
+        }
         let hosted = CommandLine.arguments.contains("--hosted")
         var loader: StreamingFileLoader?
         let player: AVPlayer

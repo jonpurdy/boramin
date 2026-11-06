@@ -20,4 +20,4 @@ The six-channel control explicitly assigns a 5.1 layout for compatibility testin
 
 Conclusion: this soundtrack is not recognized as an audio track by native AVFoundation on the tested Apple TV. A media-selection UI change cannot select a track the framework does not expose. Re-encoding only the audio to a conventional AAC configuration is a demonstrated compatibility remedy; no custom decoding fallback or remux route was added.
 
-Evidence: `/tmp/boramin-native-audio-probe-run.log`, `/tmp/boramin-mp4-audio-check.log`; source `Tests/NativeAudioProbe.swift`. Diagnostic clips/project are under ignored `build/NativeAudioProbe/`. Attached-console timeout after COMPLETE is an observation timeout, not an app crash. The diagnostic app was removed and normal BoraMin was restored on Apple TV.
+Evidence: `/tmp/boramin-native-audio-probe-run.log`, `/tmp/boramin-mp4-audio-check.log`. The standalone diagnostic source was removed from the 0.6.2 baseline. Attached-console timeout after COMPLETE is an observation timeout, not an app crash. The diagnostic app was removed and normal BoraMin was restored on Apple TV.

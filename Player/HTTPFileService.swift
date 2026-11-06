@@ -69,21 +69,30 @@ final class HTTPFileService: @unchecked Sendable {
         }
         return entry
     }
+    func readRange(path: String, size: Int64, range: Range<Int64>) async throws -> Data {
+        let request = Self.rangeRequest(url: try url(path: path), range: range)
+        return try await network.perform(request, policy: .range(range, size: size, etag: nil, modified: nil)).data
+    }
+
+    private static func rangeRequest(url: URL, range: Range<Int64>) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.setValue("bytes=\(range.lowerBound)-\(range.upperBound - 1)", forHTTPHeaderField: "Range")
+        return request
+    }
+
     func openFile(path: String, size: Int64, cancellation: CancellationFlag) async throws -> CachedRemoteFile {
         guard size > 0, !cancellation.cancelled else {
             if cancellation.cancelled { throw CancellationError() }
             throw PlayerError("This file is empty or its size is unavailable.")
         }
         let fileURL = try url(path: path)
-        var probe = URLRequest(url: fileURL)
-        probe.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        let probe = Self.rangeRequest(url: fileURL, range: 0..<1)
         let first = try await network.perform(probe, policy: .range(0..<1, size: size, etag: nil, modified: nil), cancellation: cancellation)
         guard !cancellation.cancelled else { throw CancellationError() }
         let etag = first.response.value(forHTTPHeaderField: "ETag").flatMap { $0.hasPrefix("W/") ? nil : $0 }
         let modified = first.response.value(forHTTPHeaderField: "Last-Modified")
         return CachedRemoteFile(size: size, cancellation: cancellation) { [self] range, _, _, completion in
-            var request = URLRequest(url: fileURL)
-            request.setValue("bytes=\(range.lowerBound)-\(range.upperBound - 1)", forHTTPHeaderField: "Range")
+            var request = Self.rangeRequest(url: fileURL, range: range)
             if let etag { request.setValue(etag, forHTTPHeaderField: "If-Match") }
             else if let modified { request.setValue(modified, forHTTPHeaderField: "If-Unmodified-Since") }
             let task = network.start(request, policy: .range(range, size: size, etag: etag, modified: etag == nil ? modified : nil)) {

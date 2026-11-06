@@ -1,14 +1,16 @@
 import AppKit
 
-/// Intercept unmodified seek keys only within the current playback host.
+/// Intercept unmodified transport keys only within the current playback host.
 /// Resolve the view's window for every event because AVKit can reparent it for full screen.
 @MainActor final class MacPlaybackKeyboard {
     private weak var view: NSView?
+    private let togglePlayback: () -> Void
     private let seek: (Double) -> Void
     private var monitor: Any?
 
-    init(view: NSView, seek: @escaping (Double) -> Void) {
+    init(view: NSView, togglePlayback: @escaping () -> Void, seek: @escaping (Double) -> Void) {
         self.view = view
+        self.togglePlayback = togglePlayback
         self.seek = seek
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated {
@@ -26,6 +28,8 @@ import AppKit
               let window = view?.window, window.isKeyWindow, event.window === window,
               window.attachedSheet == nil, !(window.firstResponder is NSTextView) else { return event }
         switch event.keyCode {
+        case 49:
+            if !event.isARepeat { togglePlayback() }
         case 123: seek(-10)
         case 124: seek(10)
         default: return event

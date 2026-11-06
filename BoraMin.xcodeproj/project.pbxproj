@@ -192,7 +192,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -200,7 +200,7 @@
 				<key>INFOPLIST_FILE</key>
 				<string>tvOS/TopShelf/Info.plist</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.example.BoraMin.TopShelf</string>
 				<key>PRODUCT_NAME</key>
@@ -356,7 +356,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -386,7 +386,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -445,7 +445,7 @@
 				<key>COMBINE_HIDPI_IMAGES</key>
 				<string>YES</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -470,7 +470,7 @@
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
 				<string>15.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -915,7 +915,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -944,7 +944,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -1025,7 +1025,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -1033,7 +1033,7 @@
 				<key>INFOPLIST_FILE</key>
 				<string>tvOS/TopShelf/Info.plist</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.example.BoraMin.TopShelf</string>
 				<key>PRODUCT_NAME</key>
@@ -1149,7 +1149,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -1175,7 +1175,7 @@
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
 				<string>15.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -1230,7 +1230,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -1256,7 +1256,7 @@
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
 				<string>15.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -1398,7 +1398,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -1422,7 +1422,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -1852,7 +1852,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -1881,7 +1881,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -2036,7 +2036,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -2066,7 +2066,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-tvos-simulator/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>
@@ -2136,7 +2136,7 @@
 				<key>COMBINE_HIDPI_IMAGES</key>
 				<string>YES</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -2161,7 +2161,7 @@
 				<key>MACOSX_DEPLOYMENT_TARGET</key>
 				<string>15.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -2313,7 +2313,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -2336,7 +2336,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -2405,7 +2405,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEVELOPMENT_TEAM</key>
 				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -2428,7 +2428,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-framework</string>
@@ -3042,7 +3042,7 @@
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
-				<string>11</string>
+				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
 				<key>DEVELOPMENT_TEAM</key>
@@ -3066,7 +3066,7 @@
 					<string>$(SRCROOT)/vendor/ffmpeg-ios/lib</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.6.1</string>
+				<string>0.6.2</string>
 				<key>OTHER_LDFLAGS</key>
 				<array>
 					<string>-lavformat</string>

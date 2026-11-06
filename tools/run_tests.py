@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Run Mac demux/audio and hardware controls against the adjacent lab fixture."""
 from pathlib import Path
+import argparse
 import hashlib, struct, subprocess, tempfile, sys
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--offline", action="store_true", help="Skip live SMB and HTTP playback")
+args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 lab = root.parent/'atv vp9-av1 testing'
 prefix = Path(subprocess.check_output(['brew','--prefix','ffmpeg'],text=True).strip())
@@ -61,3 +65,6 @@ with tempfile.TemporaryDirectory(prefix='boramin-tests-') as tmp:
         run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24','-t','8',
              '-c:v',codec,*extra,'-g','48',output])
     run([sys.executable,'tools/run_playback_probe.py','codecs',h264,hevc])
+
+if not args.offline:
+    run([sys.executable, "tools/run_playback_probe.py", "failure", "live"])

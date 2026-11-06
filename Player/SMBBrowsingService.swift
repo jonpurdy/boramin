@@ -137,6 +137,17 @@ import AMSMB2
         return result
     }
 
+    nonisolated static func readRange(_ manager: SMB2Manager, path: String, range: Range<Int64>) async throws -> Data {
+        let cancellation = CancellationFlag()
+        return try await CancellableOperation.run(interrupt: {
+            cancellation.cancel()
+            abort(manager)
+        }) { completion in
+            manager.contents(atPath: path, range: range, progress: { _, _ in !cancellation.cancelled },
+                             completionHandler: completion)
+        }
+    }
+
     nonisolated static func replacementSession(for manager: SMB2Manager) -> SMB2Manager? {
         // NSCopying retains connection settings/credentials, never the old socket or queue.
         manager.copy() as? SMB2Manager

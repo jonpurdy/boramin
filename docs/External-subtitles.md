@@ -52,7 +52,7 @@ Generate the existing ASS fixture, then an MP4 containing its plain embedded tra
 python3 tools/create_ass_fixture.py
 python3 tools/create_pgs_fixture.py
 ffmpeg -v error -y -i build/ASSTests/styled.mkv -map 0:v -map 0:a -map 0:s:1 -c:v copy -c:a copy -c:s mov_text build/ASSTests/external-fixture.mp4
-python3 tools/test_aether_software.py --probe external
+python3 tools/run_playback_probe.py --generate-only external
 xcodebuild -project build/AetherSoftwareTests/Probe.xcodeproj -scheme 'BoraMin macOS' -configuration Release -destination 'platform=macOS,arch=arm64' -clonedSourcePackagesDirPath build/AetherPackages -derivedDataPath build/AetherSoftwareTests/Derived build
 build/AetherSoftwareTests/Derived/Build/Products/Release/BoraMin.app/Contents/MacOS/BoraMin "$PWD/build/ASSTests"
 ```

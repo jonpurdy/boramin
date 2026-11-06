@@ -218,14 +218,14 @@ import AVKit
                 let pixels = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
                 if !engineMedia.usesSampleBufferVideo { item.add(pixels) }
                 try await wait("HTTP engine renders") {
-                    if engineMedia.usesSampleBufferVideo { return nativeView.sampleVideo?.layer.status == .rendering && (nativeView.sampleVideo?.queuedTime ?? -1) > 0.2 }
+                    if engineMedia.usesSampleBufferVideo { return window.sampleVideo?.layer.status == .rendering && (window.sampleVideo?.queuedTime ?? -1) > 0.2 }
                     return player.currentTime().seconds > 0.2 && pixels.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil) != nil
                 }
                 for target in [5.0, 1.0] {
                     guard await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) else { throw PlayerError("HTTP engine seek failed") }
                     try await wait("HTTP engine renders after seek") {
                         guard player.currentTime().seconds > target + 0.1, player.currentTime().seconds < target + 2 else { return false }
-                        if engineMedia.usesSampleBufferVideo { return nativeView.sampleVideo?.layer.status == .rendering && (nativeView.sampleVideo?.queuedTime ?? -1) >= target }
+                        if engineMedia.usesSampleBufferVideo { return window.sampleVideo?.layer.status == .rendering && (window.sampleVideo?.queuedTime ?? -1) >= target }
                         return pixels.copyPixelBuffer(forItemTime: player.currentTime(), itemTimeForDisplay: nil) != nil
                     }
                 }
