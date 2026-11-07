@@ -32,6 +32,19 @@ enum ConnectionScheme: String {
     }
 }
 
+enum BoraMinIdentity {
+    static let bundleIdentifier = Bundle.main.bundleIdentifier ?? "BoraMin"
+    static let appBundleIdentifier = value("BoraMinAppBundleIdentifier") ?? bundleIdentifier
+    static let cloudKitContainer = value("BoraMinCloudKitContainer")
+    static let keychainService = value("BoraMinKeychainService") ?? appBundleIdentifier + ".SMB"
+
+    private static func value(_ key: String) -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+              !value.isEmpty, !value.hasPrefix("$(") else { return nil }
+        return value
+    }
+}
+
 struct SavedConnection: Identifiable, Equatable, Hashable {
     let id: String
     let server: String
@@ -67,7 +80,7 @@ struct SavedConnection: Identifiable, Equatable, Hashable {
     @Published private(set) var connections: [SavedConnection] = []
     private var observer: NSObjectProtocol?
 
-    init(defaults: UserDefaults = .standard, service: String = "com.example.BoraMin.SMB") {
+    init(defaults: UserDefaults = .standard, service: String = BoraMinIdentity.keychainService) {
         self.defaults = defaults
         self.service = service
         migrateLegacyConnection()

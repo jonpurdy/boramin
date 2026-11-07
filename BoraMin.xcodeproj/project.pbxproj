@@ -17,6 +17,17 @@
 			<key>isa</key>
 			<string>PBXBuildFile</string>
 		</dict>
+		<key>019A3A9632608E3CE5765F7C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.xcconfig</string>
+			<key>path</key>
+			<string>Config/Identity.xcconfig</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
 		<key>02734DB5853FC9842997F20C</key>
 		<dict>
 			<key>isa</key>
@@ -61,6 +72,8 @@
 		</dict>
 		<key>07CA1E69F6068DEA30A4DA6B</key>
 		<dict>
+			<key>baseConfigurationReference</key>
+			<string>019A3A9632608E3CE5765F7C</string>
 			<key>buildSettings</key>
 			<dict>
 				<key>CLANG_ENABLE_MODULES</key>
@@ -193,8 +206,6 @@
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>12</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_FILE</key>
@@ -202,7 +213,7 @@
 				<key>MARKETING_VERSION</key>
 				<string>0.6.2</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin.TopShelf</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID).TopShelf</string>
 				<key>PRODUCT_NAME</key>
 				<string>BoraMinTopShelf</string>
 				<key>SDKROOT</key>
@@ -237,6 +248,7 @@
 				<string>ED1D339C2F7345DB0DD72BD9</string>
 				<string>BB818673A1C5A557F3715C35</string>
 				<string>6291EB9EB423C3FB2D70AF78</string>
+				<string>1B3039B2E15DD2AB7EA6156D</string>
 				<string>63A8B02B52CDAD9CA875D42B</string>
 				<string>2F791B163A8E8368318D21D4</string>
 				<string>0A3E27B8CA818264D75C8D81</string>
@@ -359,8 +371,6 @@
 				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>DYLIB_INSTALL_NAME_BASE</key>
 				<string>@rpath</string>
 				<key>EXPORTED_SYMBOLS_FILE</key>
@@ -404,7 +414,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin.media</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID).media</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMinMedia</string>
 				<key>PRODUCT_NAME</key>
@@ -446,8 +456,6 @@
 				<string>YES</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>12</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
 				<string>YES</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -484,7 +492,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID)</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMin_macos</string>
 				<key>PRODUCT_NAME</key>
@@ -500,6 +508,19 @@
 			<string>XCBuildConfiguration</string>
 			<key>name</key>
 			<string>Release</string>
+		</dict>
+		<key>1B3039B2E15DD2AB7EA6156D</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>019A3A9632608E3CE5765F7C</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>name</key>
+			<string>Config</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
 		</dict>
 		<key>1C47D46A3644D510C3DD4CC1</key>
 		<dict>
@@ -717,6 +738,8 @@
 		</dict>
 		<key>2B23A31EEC75B029432F2445</key>
 		<dict>
+			<key>baseConfigurationReference</key>
+			<string>019A3A9632608E3CE5765F7C</string>
 			<key>buildSettings</key>
 			<dict>
 				<key>CLANG_ENABLE_MODULES</key>
@@ -916,8 +939,6 @@
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>12</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -958,7 +979,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID)</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMin_tvos</string>
 				<key>PRODUCT_NAME</key>
@@ -1026,8 +1047,6 @@
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>12</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_FILE</key>
@@ -1035,7 +1054,7 @@
 				<key>MARKETING_VERSION</key>
 				<string>0.6.2</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin.TopShelf</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID).TopShelf</string>
 				<key>PRODUCT_NAME</key>
 				<string>BoraMinTopShelf</string>
 				<key>SDKROOT</key>
@@ -1152,8 +1171,6 @@
 				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>DYLIB_INSTALL_NAME_BASE</key>
 				<string>@rpath</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -1193,7 +1210,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin.media</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID).media</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMinMedia</string>
 				<key>PRODUCT_NAME</key>
@@ -1233,8 +1250,6 @@
 				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>DYLIB_INSTALL_NAME_BASE</key>
 				<string>@rpath</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
@@ -1274,7 +1289,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin.media</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID).media</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMinMedia</string>
 				<key>PRODUCT_NAME</key>
@@ -1401,8 +1416,6 @@
 				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>DYLIB_INSTALL_NAME_BASE</key>
 				<string>@rpath</string>
 				<key>EXPORTED_SYMBOLS_FILE</key>
@@ -1440,7 +1453,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin.media</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID).media</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMinMedia</string>
 				<key>PRODUCT_NAME</key>
@@ -1853,8 +1866,6 @@
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>12</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -1895,7 +1906,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID)</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMin_tvos</string>
 				<key>PRODUCT_NAME</key>
@@ -2039,8 +2050,6 @@
 				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>DYLIB_INSTALL_NAME_BASE</key>
 				<string>@rpath</string>
 				<key>EXPORTED_SYMBOLS_FILE</key>
@@ -2084,7 +2093,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin.media</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID).media</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMinMedia</string>
 				<key>PRODUCT_NAME</key>
@@ -2137,8 +2146,6 @@
 				<string>YES</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>12</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>ENABLE_HARDENED_RUNTIME</key>
 				<string>YES</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
@@ -2175,7 +2182,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID)</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMin_macos</string>
 				<key>PRODUCT_NAME</key>
@@ -2314,8 +2321,6 @@
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>12</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -2350,7 +2355,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID)</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMin_ios</string>
 				<key>PRODUCT_NAME</key>
@@ -2406,8 +2411,6 @@
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
 				<string>12</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>HEADER_SEARCH_PATHS</key>
@@ -2442,7 +2445,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID)</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMin_ios</string>
 				<key>PRODUCT_NAME</key>
@@ -3045,8 +3048,6 @@
 				<string>12</string>
 				<key>DEFINES_MODULE</key>
 				<string>NO</string>
-				<key>DEVELOPMENT_TEAM</key>
-				<string>EXAMPLE000</string>
 				<key>DYLIB_INSTALL_NAME_BASE</key>
 				<string>@rpath</string>
 				<key>EXPORTED_SYMBOLS_FILE</key>
@@ -3084,7 +3085,7 @@
 					<string>-liconv</string>
 				</array>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>com.example.BoraMin.media</string>
+				<string>$(BORAMIN_APP_BUNDLE_ID).media</string>
 				<key>PRODUCT_MODULE_NAME</key>
 				<string>BoraMinMedia</string>
 				<key>PRODUCT_NAME</key>

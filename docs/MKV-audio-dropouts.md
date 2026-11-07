@@ -1,6 +1,6 @@
-# Intermittent audio dropouts in HEVC/AAC fixture MKV
+# Intermittent audio dropouts in the HEVC/AAC fixture MKV
 
-Reported on Apple TV over SMB and on macOS. Video keeps moving while audio drops for several seconds. The onset varies between plays. The affected fixture is `playback-tests/same codecs, different container/fallback.mkv` on the `media` share. On Mac, the file uses AetherEngine's software playback route after the native item is rejected.
+Reported on Apple TV over SMB and on macOS. Video keeps moving while audio drops for several seconds. The onset varies between plays. The affected MKV is selected by the `kpop` entry in the local playback manifest. On Mac, the file uses AetherEngine's software playback route after the native item is rejected.
 
 - The passages near **19:19** and **19:41** are quiet in the source. Independent decoding confirms audio in **19:26–19:31**, where the user heard silence in BoraMin on one attempt and heard audio in mpv.
 - A Mac SMB run from **18:30 to 21:30** captured a **6.3-second** decoded PCM timestamp gap beginning at **18:34.6**. The audio renderer reported insufficient data during the gap while video continued to advance. The run captured decoded audio through **19:26–19:31**.

@@ -3,7 +3,7 @@ import Foundation
 import Network
 import AVFoundation
 
-private let streamingLog = Logger(subsystem: "com.example.BoraMin", category: "Streaming")
+private let streamingLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "Streaming")
 
 /// A seekable remote file with a fixed-size, in-memory block cache. Never writes the movie to disk.
 final class CachedRemoteFile: @unchecked Sendable {

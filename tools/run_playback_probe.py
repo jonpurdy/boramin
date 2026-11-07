@@ -52,7 +52,7 @@ def generate_project(root, folder, mode):
             settings['CODE_SIGNING_ALLOWED'] = 'NO'
             settings['ENABLE_APP_SANDBOX'] = 'NO'
             if mode == 'failure' and settings.get('PRODUCT_NAME') == 'BoraMin':
-                settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.example.BoraMin.PlaybackFailureProbe'
+                settings['PRODUCT_BUNDLE_IDENTIFIER'] = '$(BORAMIN_APP_BUNDLE_ID).PlaybackFailureProbe'
     (project / 'project.pbxproj').write_bytes(plistlib.dumps(data))
     # Preserve the checked-in scheme's target identifiers and build configuration.
     schemes = project / 'xcshareddata/xcschemes'

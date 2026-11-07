@@ -6,7 +6,7 @@ import SwiftUI
 import VideoToolbox
 import AMSMB2
 
-private let playbackLog = Logger(subsystem: "com.example.BoraMin", category: "Playback")
+private let playbackLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "Playback")
 
 struct PlayerError: LocalizedError {
     let message: String
@@ -1094,7 +1094,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
         var saved = media.positionKey.flatMap { PlaybackPositions.shared.position(for: $0, duration: media.info.duration) }
         if CommandLine.arguments.contains("--probe-frames-only"), CommandLine.arguments.contains("--test-resume-position") {
             // Isolated preferences exercise the save/load/restore flow without changing user history or iCloud.
-            let domain = "com.example.BoraMin.RemuxProbe.\(UUID().uuidString)"
+            let domain = "BoraMin.RemuxProbe.\(UUID().uuidString)"
             if let defaults = UserDefaults(suiteName: domain) {
                 let positions = PlaybackPositions(defaults: defaults)
                 positions.save(75, duration: media.info.duration, for: "probe")

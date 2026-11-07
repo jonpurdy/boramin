@@ -9,12 +9,12 @@ import SwiftAssRenderer
 import SwiftLibass
 import OSLog
 
-private let assLog = Logger(subsystem: "com.example.BoraMin", category: "Subtitles")
+private let assLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "Subtitles")
 
 /// All libass pointers and bitmap processing stay on one queue. Compressed events
 /// are appended through the public Matroska API, rather than reparsing whole scripts.
 final class ASSRasterizer: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "com.example.BoraMin.libass", qos: .userInitiated)
+    private let queue = DispatchQueue(label: BoraMinIdentity.bundleIdentifier + ".libass", qos: .userInitiated)
     private let queueKey = DispatchSpecificKey<Bool>()
     private let gate = NSLock()
     private var rendering = false

@@ -1,0 +1,6 @@
+// Copy to Identity.local.xcconfig and use identifiers registered to your team.
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+BORAMIN_APP_BUNDLE_ID = com.example.BoraMin
+BORAMIN_CLOUDKIT_CONTAINER = iCloud.com.example.BoraMin
+BORAMIN_APP_GROUP = group.com.example.BoraMin
+BORAMIN_KEYCHAIN_SERVICE = com.example.BoraMin.SMB

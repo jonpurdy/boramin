@@ -12,3 +12,7 @@ vendor/ffmpeg-ios/
 vendor/ffmpeg-macos/
 
 vendor/ffmpeg-tvos-simulator/
+
+/Config/Identity.local.xcconfig
+
+/Config/PlaybackFixtures.local.json

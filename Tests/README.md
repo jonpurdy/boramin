@@ -145,32 +145,26 @@ For the read-only HEVC/AAC Mac failure investigation, use `python3 tools/run_pla
 The failure probe also accepts `kpop-remux` for the user's stream-copy comparison file, `--documented-host` for a minimal pre-bound public surface, and `--controls` for pause, fresh compositor-frame timestamps after forward/backward seeks, and stop. These are opt-in, read-only SMB diagnostics using isolated preferences; they do not modify source media or saved positions.
 
 
-### Real SMB playback fixtures
+### Live SMB and HTTP playback fixtures
 
-On the `media` share, these fixtures live under `playback-tests`.
-
-| Folder | Files |
-| --- | --- |
-| `hevc 4k atmos mkv` | `surround.mkv` |
-| `same codecs, different container` | `fallback.mkv`, `fallback.mp4`, and the matching `.srt` sidecar |
-| `vp9 4k hdr 60fps` | `hardware-vp9.mkv` |
-| `mkv ass subs` | `external-ass.mp4` and its external `external-ass.ass` sidecar |
-| `avi xvid` | `legacy.avi` |
-
-The failure probe uses the surround fixture MKV and the HEVC/AAC MKV. Its optional `kpop-remux` mode requires the separate `fallback-remuxed.mkv` in the same folder as the HEVC/AAC MKV. That comparison file was absent when the relocated fixtures were inventoried.
+Copy `Config/PlaybackFixtures.example.json` to the ignored
+`Config/PlaybackFixtures.local.json` and set your saved SMB and HTTP profile IDs,
+SMB share, fixture root, and files. The paths in `diagnostics` are relative to the
+fixture root. Set `BORAMIN_PLAYBACK_FIXTURES` to use a different local manifest.
+Credentials continue to come from the app’s saved connection profiles and Keychain.
 
 The full Mac suite runs these fixtures over SMB and HTTP after the local checks.
 Use `python3 tools/run_tests.py --offline` for local checks only or
 `python3 tools/run_playback_probe.py failure live` to run the live stage by itself.
-The live stage selects the saved `saved SMB profile` and `saved HTTP profile` profiles by ID.
+The live stage selects the saved profiles by ID.
 It checks the inventory of non-empty files, advancing video, pause/resume, forward and backward seeks,
 and matching sidecar discovery and reads. The SMB run also selects an alternate
-surround fixture audio track and checks that the external ASS fixture ASS cue generates a
-subtitle bitmap. VP9 HDR fixture exercises the hardware-only VP9 decoder on both connections.
+audio track for the `audio` fixture and checks that the `ass` fixture generates a
+subtitle bitmap. The `hardwareVP9` fixture exercises hardware-only decoding on both connections.
 Results are written to `build/AetherSoftwareTests/live-playback.log`.
 
 Check double-click full screen, scaling and idle control visibility separately
-in the Mac playback window using the HEVC/AAC MP4 and VP9 HDR fixture VP9 fixtures.
+in the Mac playback window using the native MP4 and hardware VP9 fixtures.
 
 To inspect intermittent HEVC/AAC MKV audio over the saved SMB profile, run
 `python3 tools/run_playback_probe.py failure -- kpop --audio-continuity --audio-start=1110 --audio-end=1290 --aether-diagnostics`.

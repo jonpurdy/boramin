@@ -1,6 +1,6 @@
 # BoraMin for macOS
 
-Native AppKit/SwiftUI app for **macOS Sequoia 15.0+**, currently Apple Silicon arm64 only. It is not Catalyst. Use **BoraMin.xcodeproj → BoraMin macOS** and bundle ID `com.example.BoraMin`.
+Native AppKit/SwiftUI app for **macOS Sequoia 15.0+**, currently Apple Silicon arm64 only. It is not Catalyst. Use **BoraMin.xcodeproj → BoraMin macOS**.
 
 The interface uses NavigationSplitView, native tables/selection, toolbar navigation/search, a Settings scene, and resizable playback windows with system full-screen support. Double-click opens folders/videos; Control-click opens context actions. Files and Favorites retain separate navigation. There is no local-file opening feature.
 
@@ -29,4 +29,4 @@ open build/macOS/Build/Products/Release/BoraMin.app
 
 Configure development signing/provisioning for the Mac and shared iCloud container. The sandbox allows outbound SMB and the engine's loopback listener; it does not grant broad filesystem access. Passwords live in Keychain; no server defaults are bundled. Dependencies are bundled rather than loaded from Homebrew at runtime.
 
-See [Tests/README.md](../Tests/README.md) for isolated probes, [iCloud design](../docs/iCloud-sync.md) for sync boundaries, and [TestFlight](../testflight.md) for distribution. A development build is not a notarized public distribution.
+See [Tests/README.md](../Tests/README.md) for isolated probes, [iCloud design](../docs/iCloud-sync.md) for sync boundaries, and the [archive helper](../tools/prepare_testflight.py) for distribution preparation. A development build is not a notarized public distribution.

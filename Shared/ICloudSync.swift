@@ -4,7 +4,7 @@ import CloudKit
 import CryptoKit
 import Combine
 
-private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iCloud")
+private let cloudLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "iCloud")
 
 /// Shared by the tvOS, iOS and macOS apps. Passwords never enter this store.
 @MainActor final class ICloudSync: ObservableObject, CKSyncEngineDelegate {
@@ -45,7 +45,7 @@ private let cloudLog = Logger(subsystem: "com.example.BoraMin", category: "iClou
         return "\(message) Last synced \(lastSync.formatted(date: .abbreviated, time: .shortened))"
     }
     private let defaults = UserDefaults.standard
-    private let container = CKContainer(identifier: "iCloud.com.example.BoraMin")
+    private let container = BoraMinIdentity.cloudKitContainer.map { CKContainer(identifier: $0) } ?? CKContainer.default()
     private let zone = CKRecordZone.ID(zoneName: "BoraMinUserData-v1")
     private var engine: CKSyncEngine?
     private var state = State()

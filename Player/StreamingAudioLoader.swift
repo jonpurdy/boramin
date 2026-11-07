@@ -2,7 +2,7 @@ import OSLog
 import AVFoundation
 import Foundation
 
-private let audioLog = Logger(subsystem: "com.example.BoraMin", category: "Audio")
+private let audioLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "Audio")
 
 /// AVFoundation owns request cancellation at a seek; no artificial HTTP disconnects.
 final class StreamingAudioLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {

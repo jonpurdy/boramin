@@ -35,9 +35,10 @@ import Security
     @Published private(set) var pending = 0
     @Published var offline = false
     @Published var busy = false
-    private let container = CKContainer(identifier: "iCloud.com.example.BoraMin")
+    private let container = BoraMinIdentity.cloudKitContainer.map { CKContainer(identifier: $0) } ?? CKContainer.default()
     private let zoneID = CKRecordZone.ID(zoneName: "BoraMinSyncProbe-v1")
-    private let secretService = "com.example.BoraMin.SyncTest.Secrets"
+    private let secretService = (BoraMinIdentity.keychainService.hasSuffix(".SMB")
+        ? String(BoraMinIdentity.keychainService.dropLast(4)) : BoraMinIdentity.keychainService) + ".SyncTest.Secrets"
     private var engine: CKSyncEngine?
     private var disk = DiskState()
     private var file: URL?

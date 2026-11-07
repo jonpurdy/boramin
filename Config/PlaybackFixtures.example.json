@@ -1,0 +1,43 @@
+{
+  "smbConnectionID": "SAVED_SMB_CONNECTION_ID",
+  "httpConnectionID": "SAVED_HTTP_CONNECTION_ID",
+  "smbShare": "media",
+  "fixtureRoot": "playback-tests",
+  "fixtures": [
+    {
+      "folder": "surround",
+      "file": "surround.mkv",
+      "role": "audio"
+    },
+    {
+      "folder": "compatibility",
+      "file": "fallback.mkv",
+      "subtitle": "fallback.srt"
+    },
+    {
+      "folder": "compatibility",
+      "file": "fallback.mp4",
+      "subtitle": "fallback.srt"
+    },
+    {
+      "folder": "vp9",
+      "file": "hardware.mkv",
+      "role": "hardwareVP9"
+    },
+    {
+      "folder": "subtitles",
+      "file": "subtitles.mp4",
+      "subtitle": "subtitles.ass",
+      "role": "ass"
+    },
+    {
+      "folder": "legacy",
+      "file": "legacy.avi"
+    }
+  ],
+  "diagnostics": {
+    "blade": "surround/surround.mkv",
+    "kpop": "compatibility/fallback.mkv",
+    "kpop-remux": "compatibility/fallback-remuxed.mkv"
+  }
+}

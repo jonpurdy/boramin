@@ -8,7 +8,6 @@ from pathlib import Path
 import argparse
 import plistlib
 import subprocess
-from app_identity import APP_BUNDLE_ID
 
 root = Path(__file__).resolve().parent.parent
 parser = argparse.ArgumentParser(description=__doc__)
@@ -37,7 +36,12 @@ if args.build_number is not None:
     command.append(f'CURRENT_PROJECT_VERSION={args.build_number}')
 subprocess.run(command, cwd=root, check=True)
 info = plistlib.loads((archive/'Info.plist').read_bytes())
-if info.get('ApplicationProperties', {}).get('CFBundleIdentifier') != APP_BUNDLE_ID:
+properties = info['ApplicationProperties']
+app = archive / 'Products' / properties['ApplicationPath']
+contents = app / 'Contents' if args.platform == 'macos' else app
+app_info = plistlib.loads((contents / 'Info.plist').read_bytes())
+identity = app_info.get('BoraMinAppBundleIdentifier')
+if not identity or identity.startswith('$(') or identity != properties.get('CFBundleIdentifier'):
     raise SystemExit('Archive has the wrong app identity; refusing to export.')
 print(f'Archive: {archive}', flush=True)
 if args.export:
@@ -45,6 +49,11 @@ if args.export:
     settings = plistlib.loads(options.read_bytes())
     if settings.get('destination') != 'export' or settings.get('iCloudContainerEnvironment') != 'Production':
         raise SystemExit('Expected a local export with Production iCloud; refusing to continue.')
+    if not properties.get('Team'):
+        raise SystemExit('Archive has no signing team; refusing to export.')
+    settings['teamID'] = properties['Team']
+    options = output/'ExportOptions.plist'
+    options.write_bytes(plistlib.dumps(settings))
     subprocess.run(['xcodebuild', '-exportArchive', '-archivePath', str(archive),
                     '-exportPath', str(output/'Export'), '-exportOptionsPlist', str(options),
                     '-allowProvisioningUpdates'], cwd=root, check=True)

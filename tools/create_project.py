@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate BoraMin's shared Xcode project with native iOS, tvOS and macOS targets."""
 from pathlib import Path
-from app_identity import APP_BUNDLE_ID
+
 import argparse
 import hashlib
 import os
@@ -9,6 +9,8 @@ import plistlib
 import re
 import subprocess
 from xml.sax.saxutils import escape
+
+APP_BUNDLE_ID = "$(BORAMIN_APP_BUNDLE_ID)"
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--include-cloud-probe', action='store_true', help='Include the isolated iOS synthetic CloudKit regression screen')
@@ -27,7 +29,7 @@ platforms = {
     'tvos': dict(name='BoraMin tvOS', sdk='appletvos', folder='tvOS', deployment=('TVOS_DEPLOYMENT_TARGET', '26.2'), ffmpeg='ffmpeg', icon='Assets/BoraMinTV.xcassets', icon_type='folder.assetcatalog', icon_name='AppIcon', entitlements='tvOS/BoraMin.entitlements', info='tvOS/Info.plist'),
     'macos': dict(name='BoraMin macOS', sdk='macosx', folder='MacOS', deployment=('MACOSX_DEPLOYMENT_TARGET', '15.0'), ffmpeg='ffmpeg-macos', icon='MacOS/Assets.xcassets', icon_type='folder.assetcatalog', icon_name='AppIcon', entitlements='MacOS/BoraMin.entitlements', info='MacOS/Info.plist'),
 }
-# Preserve per-platform signing and version choices, including the first migration.
+# Preserve per-platform versions. Signing identity comes from Identity.xcconfig.
 previous = {}
 for path, legacy_platform in [(project, 'tvos'), (root/'iOS/BoraMin.xcodeproj', 'ios'), (root/'BoraMinMac.xcodeproj', 'macos')]:
     pbx = path/'project.pbxproj'
@@ -42,9 +44,7 @@ for path, legacy_platform in [(project, 'tvos'), (root/'iOS/BoraMin.xcodeproj', 
         for config_id in configs:
             config = old['objects'][config_id]
             settings = config['buildSettings']
-            keys = ['DEVELOPMENT_TEAM', 'MARKETING_VERSION', 'CURRENT_PROJECT_VERSION']
-            if settings.get('PRODUCT_BUNDLE_IDENTIFIER') == APP_BUNDLE_ID:
-                keys += ['PROVISIONING_PROFILE_SPECIFIER']
+            keys = ['MARKETING_VERSION', 'CURRENT_PROJECT_VERSION']
             previous.setdefault((platform, config['name']), {k: settings[k] for k in keys if k in settings})
 
 version_overrides = {}
@@ -81,6 +81,7 @@ obj('package', 'XCLocalSwiftPackageReference', relativePath='vendor/AMSMB2')
 obj('aetherpackage', 'XCLocalSwiftPackageReference', relativePath='vendor/AetherEngine')
 obj('asspackage', 'XCRemoteSwiftPackageReference', repositoryURL='https://github.com/mihai8804858/swift-ass-renderer.git', requirement={'kind': 'exactVersion', 'version': '1.3.1'})
 licences = file_ref(root/'Licences', 'folder')
+identity_config = file_ref(root/'Config/Identity.xcconfig', 'text.xcconfig')
 products = []
 targets = []
 for platform, spec in platforms.items():
@@ -122,7 +123,7 @@ for platform, spec in platforms.items():
     obj(platform+':resources', 'PBXResourcesBuildPhase', buildActionMask=2147483647, files=resources, runOnlyForDeploymentPostprocessing=0)
     targets.append(obj(platform+':target', 'PBXNativeTarget', buildConfigurationList=ident(platform+':configs'), buildPhases=[ident(platform+':'+phase) for phase in ('sources', 'frameworks', 'resources', 'embed')], buildRules=[], dependencies=[media_dependency], name=name, productName='BoraMin', productReference=product, productType='com.apple.product-type.application', packageProductDependencies=[ident(platform+':smb'), ident(platform+':aether'), ident(platform+':ass')]))
     for config in ('Debug', 'Release'):
-        settings = dict(SDKROOT=spec['sdk'], SUPPORTED_PLATFORMS=spec['sdk'], PRODUCT_NAME='BoraMin', PRODUCT_MODULE_NAME='BoraMin_'+platform, PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID, DEVELOPMENT_TEAM='EXAMPLE000', CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS=spec['entitlements'], GENERATE_INFOPLIST_FILE='YES', INFOPLIST_FILE=spec['info'], MARKETING_VERSION='0.5.3', CURRENT_PROJECT_VERSION='8', ASSETCATALOG_COMPILER_APPICON_NAME=spec['icon_name'], SWIFT_OBJC_BRIDGING_HEADER='Player/Player-Bridging-Header.h', HEADER_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/include'], LIBRARY_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/lib'], OTHER_LDFLAGS=['-lavformat', '-lavcodec', '-lswresample', '-lavutil', '-framework', 'AudioToolbox', '-framework', 'CoreMedia', '-framework', 'VideoToolbox', '-lz', '-lbz2', '-liconv'])
+        settings = dict(SDKROOT=spec['sdk'], SUPPORTED_PLATFORMS=spec['sdk'], PRODUCT_NAME='BoraMin', PRODUCT_MODULE_NAME='BoraMin_'+platform, PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID, CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS=spec['entitlements'], GENERATE_INFOPLIST_FILE='YES', INFOPLIST_FILE=spec['info'], MARKETING_VERSION='0.5.3', CURRENT_PROJECT_VERSION='8', ASSETCATALOG_COMPILER_APPICON_NAME=spec['icon_name'], SWIFT_OBJC_BRIDGING_HEADER='Player/Player-Bridging-Header.h', HEADER_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/include'], LIBRARY_SEARCH_PATHS=['$(SRCROOT)/vendor/'+spec['ffmpeg']+'/lib'], OTHER_LDFLAGS=['-lavformat', '-lavcodec', '-lswresample', '-lavutil', '-framework', 'AudioToolbox', '-framework', 'CoreMedia', '-framework', 'VideoToolbox', '-lz', '-lbz2', '-liconv'])
         settings[spec['deployment'][0]] = spec['deployment'][1]
         if platform == 'tvos':
             settings['SUPPORTED_PLATFORMS'] = 'appletvos appletvsimulator'
@@ -163,7 +164,7 @@ ext_target = obj('topshelf:target', 'PBXNativeTarget', buildConfigurationList=id
 targets.append(ext_target)
 for config in ('Debug', 'Release'):
     version = previous.get(('tvos', config), {})
-    settings = dict(SDKROOT='appletvos', SUPPORTED_PLATFORMS='appletvos appletvsimulator', TVOS_DEPLOYMENT_TARGET='26.2', TARGETED_DEVICE_FAMILY='3', PRODUCT_NAME='BoraMinTopShelf', PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID+'.TopShelf', DEVELOPMENT_TEAM=version.get('DEVELOPMENT_TEAM', 'EXAMPLE000'), CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS='tvOS/TopShelf/TopShelf.entitlements', INFOPLIST_FILE='tvOS/TopShelf/Info.plist', GENERATE_INFOPLIST_FILE='YES', APPLICATION_EXTENSION_API_ONLY='YES', SKIP_INSTALL='YES', MARKETING_VERSION=version.get('MARKETING_VERSION', '0.5.3'), CURRENT_PROJECT_VERSION=version.get('CURRENT_PROJECT_VERSION', '8'))
+    settings = dict(SDKROOT='appletvos', SUPPORTED_PLATFORMS='appletvos appletvsimulator', TVOS_DEPLOYMENT_TARGET='26.2', TARGETED_DEVICE_FAMILY='3', PRODUCT_NAME='BoraMinTopShelf', PRODUCT_BUNDLE_IDENTIFIER=APP_BUNDLE_ID+'.TopShelf', CODE_SIGN_STYLE='Automatic', CODE_SIGN_ENTITLEMENTS='tvOS/TopShelf/TopShelf.entitlements', INFOPLIST_FILE='tvOS/TopShelf/Info.plist', GENERATE_INFOPLIST_FILE='YES', APPLICATION_EXTENSION_API_ONLY='YES', SKIP_INSTALL='YES', MARKETING_VERSION=version.get('MARKETING_VERSION', '0.5.3'), CURRENT_PROJECT_VERSION=version.get('CURRENT_PROJECT_VERSION', '8'))
     obj('topshelf:'+config, 'XCBuildConfiguration', buildSettings=settings, name=config)
 obj('topshelf:configs', 'XCConfigurationList', buildConfigurations=[ident('topshelf:'+c) for c in ('Debug', 'Release')], defaultConfigurationIsVisible=0, defaultConfigurationName='Release')
 embed = obj('topshelf:embedfile', 'PBXBuildFile', fileRef=ext_product, settings={'ATTRIBUTES': ['RemoveHeadersOnCopy']})
@@ -184,7 +185,7 @@ for folder in ('Player', 'Shared', 'iOS', 'tvOS', 'MacOS', 'Config', 'Assets', '
 obj('products', 'PBXGroup', name='Products', sourceTree='<group>', children=products)
 obj('main', 'PBXGroup', sourceTree='<group>', children=groups+[licences, ident('products')])
 for config in ('Debug', 'Release'):
-    obj('project:'+config, 'XCBuildConfiguration', buildSettings=dict(SWIFT_VERSION='5.0', DEBUG_INFORMATION_FORMAT='dwarf' if config == 'Debug' else 'dwarf-with-dsym', CLANG_ENABLE_MODULES='YES', SWIFT_OPTIMIZATION_LEVEL='-Onone' if config == 'Debug' else '-O', GCC_OPTIMIZATION_LEVEL='0' if config == 'Debug' else '3', ENABLE_USER_SCRIPT_SANDBOXING='YES'), name=config)
+    obj('project:'+config, 'XCBuildConfiguration', baseConfigurationReference=identity_config, buildSettings=dict(SWIFT_VERSION='5.0', DEBUG_INFORMATION_FORMAT='dwarf' if config == 'Debug' else 'dwarf-with-dsym', CLANG_ENABLE_MODULES='YES', SWIFT_OPTIMIZATION_LEVEL='-Onone' if config == 'Debug' else '-O', GCC_OPTIMIZATION_LEVEL='0' if config == 'Debug' else '3', ENABLE_USER_SCRIPT_SANDBOXING='YES'), name=config)
 obj('project:configs', 'XCConfigurationList', buildConfigurations=[ident('project:'+c) for c in ('Debug', 'Release')], defaultConfigurationIsVisible=0, defaultConfigurationName='Release')
 obj('project', 'PBXProject', attributes={'LastUpgradeCheck': '2630', 'TargetAttributes': {target: {'SystemCapabilities': {'com.apple.iCloud': {'enabled': 1}, 'com.apple.Push': {'enabled': 1}}} for target in targets if objects[target]['productType'] == 'com.apple.product-type.application'}}, buildConfigurationList=ident('project:configs'), compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en', 'Base'], mainGroup=ident('main'), productRefGroup=ident('products'), projectDirPath='', projectRoot='', targets=targets, packageReferences=[ident('package'), ident('aetherpackage'), ident('asspackage')])
 (project/'project.pbxproj').write_bytes(plistlib.dumps(dict(archiveVersion='1', classes={}, objectVersion='56', objects=objects, rootObject=ident('project'))))

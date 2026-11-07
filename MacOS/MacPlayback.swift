@@ -4,7 +4,7 @@ import AVKit
 import SwiftUI
 import Combine
 
-private let macPlaybackLog = Logger(subsystem: "com.example.BoraMin", category: "Playback")
+private let macPlaybackLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "Playback")
 
 /// AVKit owns the Mac transport, media menus and full-screen UI.
 /// The existing demuxed-video layer is placed in AVKit's public content overlay.

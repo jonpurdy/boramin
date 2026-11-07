@@ -63,9 +63,34 @@ private final class ProbeFrames: @unchecked Sendable {
         init(_ message: String) { self.message = message }
     }
 
-    static func livePlayback() async throws {
+    private struct FixtureConfiguration: Decodable {
+        struct Fixture: Decodable {
+            let folder: String
+            let file: String
+            let subtitle: String?
+            let role: String?
+        }
+
+        let smbConnectionID: String
+        let httpConnectionID: String
+        let smbShare: String
+        let fixtureRoot: String
+        let fixtures: [Fixture]
+        let diagnostics: [String: String]
+
+        static func load() throws -> Self {
+            let path = ProcessInfo.processInfo.environment["BORAMIN_PLAYBACK_FIXTURES"]
+                ?? "Config/PlaybackFixtures.local.json"
+            guard let data = FileManager.default.contents(atPath: path) else {
+                throw PlayerError("Copy Config/PlaybackFixtures.example.json to Config/PlaybackFixtures.local.json and configure your fixtures.")
+            }
+            return try JSONDecoder().decode(Self.self, from: data)
+        }
+    }
+
+    private static func livePlayback(config: FixtureConfiguration) async throws {
         let preferenceURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-            "Library/Containers/com.example.BoraMin/Data/Library/Preferences/com.example.BoraMin.plist")
+            "Library/Containers/\(BoraMinIdentity.appBundleIdentifier)/Data/Library/Preferences/\(BoraMinIdentity.appBundleIdentifier).plist")
         let saved = try PropertyListSerialization.propertyList(from: Data(contentsOf: preferenceURL), format: nil)
         guard let profiles = (saved as? [String: Any])?["serverProfiles.v1"] as? [String: [String: String]] else {
             throw LiveCheckError("Saved BoraMin profiles unavailable.")
@@ -77,17 +102,10 @@ private final class ProbeFrames: @unchecked Sendable {
         defaults.set(true, forKey: "connectionCredentialsMigrated.v2")
         let connections = ConnectionPreferences(defaults: defaults)
         let transports: [(String, String, ConnectionKind)] = [
-            ("SMB", "SAVED_SMB_CONNECTION_ID", .smb),
-            ("HTTP", "SAVED_HTTP_CONNECTION_ID", .http),
+            ("SMB", config.smbConnectionID, .smb),
+            ("HTTP", config.httpConnectionID, .http),
         ]
-        let fixtures: [(folder: String, file: String, subtitle: String?)] = [
-            ("hevc 4k atmos mkv", "surround.mkv", nil),
-            ("same codecs, different container", "fallback.mkv", "fallback.srt"),
-            ("same codecs, different container", "fallback.mp4", "fallback.srt"),
-            ("vp9 4k hdr 60fps", "hardware-vp9.mkv", nil),
-            ("mkv ass subs", "external-ass.mp4", "external-ass.ass"),
-            ("avi xvid", "legacy.avi", nil),
-        ]
+        let fixtures = config.fixtures
         var failures = 0
         for (label, id, kind) in transports {
             do {
@@ -97,13 +115,14 @@ private final class ProbeFrames: @unchecked Sendable {
                 let session = try RemoteSession.make(server: profile.server, username: profile.username,
                     domain: profile.domain, password: connections.password(connectionID: id) ?? "")
                 defer { session.abort() }
-                if kind == .smb { try await session.connectShare(name: "media") }
+                if kind == .smb { try await session.connectShare(name: config.smbShare) }
                 let folders = Set(fixtures.map(\.folder))
-                var base = "playback-tests"
+                var base = config.fixtureRoot
                 if kind == .http {
                     let rootFolders = Set(try await session.readDirectory(path: "").filter(\.directory).map(\.name))
-                    if rootFolders.contains("_boramin_testing") {
-                        base = "_boramin_testing"
+                    let fixtureFolder = (config.fixtureRoot as NSString).lastPathComponent
+                    if rootFolders.contains(fixtureFolder) {
+                        base = fixtureFolder
                     } else if !rootFolders.isDisjoint(with: folders) {
                         base = ""
                     }
@@ -131,9 +150,9 @@ private final class ProbeFrames: @unchecked Sendable {
                     print("START \(label) \(fixture.file)")
                     do {
                         let route = try await verifyLiveFile(session, path: path, subtitle: fixture.subtitle,
-                            hardwareVP9: fixture.folder == "vp9 4k hdr 60fps",
-                            checkASS: kind == .smb && fixture.subtitle?.hasSuffix(".ass") == true,
-                            checkAudio: kind == .smb && fixture.folder == "hevc 4k atmos mkv")
+                            hardwareVP9: fixture.role == "hardwareVP9",
+                            checkASS: kind == .smb && fixture.role == "ass",
+                            checkAudio: kind == .smb && fixture.role == "audio")
                         print("PASS \(label) \(fixture.file) [\(route)]")
                     } catch {
                         print("FAIL \(label) \(fixture.file)")
@@ -242,14 +261,14 @@ private final class ProbeFrames: @unchecked Sendable {
         try await verifyFrames(after: 0)
         if checkAudio {
             guard let tracks = MacPlaybackWindow.current?.tracks else {
-                throw LiveCheckError("surround fixture audio controls unavailable.")
+                throw LiveCheckError("fixture audio controls unavailable.")
             }
             for _ in 0..<100 {
                 if tracks.audio.contains(where: { $0.supported && $0.id != tracks.selectedAudio }) { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
             guard let alternate = tracks.audio.first(where: { $0.supported && $0.id != tracks.selectedAudio }) else {
-                throw LiveCheckError("No alternate supported surround fixture audio track.")
+                throw LiveCheckError("No alternate supported fixture audio track.")
             }
             tracks.selectAudio(alternate.id)
             for _ in 0..<100 {
@@ -328,20 +347,20 @@ private final class ProbeFrames: @unchecked Sendable {
         setbuf(stdout, nil)
         _ = NSApplication.shared; NSApp.setActivationPolicy(.accessory)
         let mode = CommandLine.arguments.dropFirst().first ?? "blade"
+        let config: FixtureConfiguration
+        do { config = try FixtureConfiguration.load() }
+        catch {
+            print("INCOMPLETE playback fixture configuration: \(error.localizedDescription)")
+            exit(1)
+        }
         if mode == "live" {
-            do { try await livePlayback() }
+            do { try await livePlayback(config: config) }
             catch { errors(error); exit(1) }
             return
         }
-        let fixtureRoot = "playback-tests"
-        let path: String
-        if mode.hasPrefix("kpop") {
-            let suffix = mode == "kpop-remux" ? " remuxed" : ""
-            path = "\(fixtureRoot)/same codecs, different container/fallback\(suffix).mkv"
-        } else {
-            path = "\(fixtureRoot)/hevc 4k atmos mkv/surround.mkv"
-        }
-        let pref = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Containers/com.example.BoraMin/Data/Library/Preferences/com.example.BoraMin.plist")
+        guard let relativePath = config.diagnostics[mode] else { throw PlayerError("Unknown playback diagnostic mode.") }
+        let path = config.fixtureRoot.isEmpty ? relativePath : config.fixtureRoot + "/" + relativePath
+        let pref = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Containers/\(BoraMinIdentity.appBundleIdentifier)/Data/Library/Preferences/\(BoraMinIdentity.appBundleIdentifier).plist")
         let saved = try PropertyListSerialization.propertyList(from: Data(contentsOf: pref), format: nil) as! [String: Any]
         let suite = "BoraMinPlaybackFailureProbe-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -349,14 +368,13 @@ private final class ProbeFrames: @unchecked Sendable {
         let store = ConnectionPreferences(defaults: defaults)
         var media: PreparedMedia?
         for connection in store.connections {
-            if CommandLine.arguments.contains("--audio-continuity"),
-               connection.id != "SAVED_SMB_CONNECTION_ID" { continue }
+            guard connection.id == config.smbConnectionID, connection.kind == .smb else { continue }
             let browser = Browser(connections: store, metadataCache: MediaMetadataCache(defaults: defaults))
             guard let url = URL(string: connection.server) else { continue }
             let client = AMSMB2.SMB2Manager(url: url, domain: connection.domain, credential: URLCredential(user: connection.username.isEmpty ? "guest" : connection.username, password: store.password(connectionID: connection.id) ?? "", persistence: .none))!
             client.timeout = 8
             do {
-                try await client.connectShare(name: "media")
+                try await client.connectShare(name: config.smbShare)
                 let attrs = try await client.attributesOfItem(atPath: path), size = (attrs[.fileSizeKey] as! NSNumber).int64Value
                 if CommandLine.arguments.contains("--packet-timing") {
                     let source = CachedRemoteFile(client: client, path: path, size: size, cancellation: CancellationFlag())

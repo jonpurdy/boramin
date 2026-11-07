@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import AMSMB2
 
-private let browserLog = Logger(subsystem: "com.example.BoraMin", category: "Browser")
+private let browserLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "Browser")
 
 @MainActor final class Browser: ObservableObject {
     @Published var host = UserDefaults.standard.string(forKey: "server") ?? ""

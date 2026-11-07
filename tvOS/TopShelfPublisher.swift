@@ -18,7 +18,7 @@ extension Notification.Name {
 }
 
 @MainActor enum TopShelfPublisher {
-    private static let logger = Logger(subsystem: "com.example.BoraMin", category: "TopShelf")
+    private static let logger = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "TopShelf")
 
     private static var foreground = false
     private static var browsingBusy = false

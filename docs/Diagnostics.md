@@ -1,6 +1,6 @@
 # Playback diagnostics
 
-BoraMin uses Apple's unified logging (`OSLog.Logger`) on iOS, tvOS and macOS. The subsystem is **`com.example.BoraMin`**. Categories are **Playback**, **Streaming**, **Audio**, **Browser** and **iCloud**.
+BoraMin uses Apple's unified logging (`OSLog.Logger`) on iOS, tvOS and macOS. The subsystem is the running app’s bundle ID. The examples below use `com.example.BoraMin`; substitute your configured ID. Categories are **Playback**, **Streaming**, **Audio**, **Browser** and **iCloud**.
 
 Native playback selects the first audio option that AVFoundation considers playable and whose codec appears in AudioToolbox's available decoder list. If audio tracks exist but none qualify, playback shows the standard error presentation; videos without audio remain playable. AVKit owns the track menu, so unsupported entries cannot be added as custom disabled rows. Codec availability does not guarantee support for every profile or damaged stream. The demuxed MKV/WebM path is unchanged.
 

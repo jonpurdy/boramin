@@ -3,7 +3,7 @@ import SwiftUI
 import AetherEngine
 import OSLog
 
-private let softwareLog = Logger(subsystem: "com.example.BoraMin", category: "SoftwarePlayback")
+private let softwareLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "SoftwarePlayback")
 
 /// Uses only AetherEngine's public surface/transport API and standard SwiftUI controls.
 /// AetherPlayer's separate surface + transport design is the reference; no UI source is copied.

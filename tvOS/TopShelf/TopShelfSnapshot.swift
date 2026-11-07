@@ -8,9 +8,9 @@ struct TopShelfEntry: Codable, Equatable {
 }
 
 enum TopShelfSnapshot {
-    static let group = "group.com.example.BoraMin"
     static var url: URL? {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "BoraMinAppGroup") as? String, !group.isEmpty else { return nil }
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?
             .appendingPathComponent("Library/Caches/TopShelf", isDirectory: true)
             .appendingPathComponent("watching.json")
     }

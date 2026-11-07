@@ -7,7 +7,7 @@ import AetherEngine
 import SwiftAssRenderer
 import OSLog
 
-private let externalSubtitleLog = Logger(subsystem: "com.example.BoraMin", category: "Subtitles")
+private let externalSubtitleLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, category: "Subtitles")
 
 @MainActor final class ExternalSubtitles: ObservableObject {
     struct Track: Identifiable {

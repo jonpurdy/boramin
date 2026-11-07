@@ -4,7 +4,7 @@ Research date: October 21, 2026; implementation status updated October 22. The t
 
 The remaining document preserves the original design proposal and cross-platform/per-profile caveats. Proposed record names and UUIDs below are conceptual, not the deployed schema: the implementation uses one encrypted `BoraMinUserData` record type in `BoraMinUserData-v1`, opaque hash identities, and `kind` fields for server/connection/favorite/position/video/setting records. The container is already configured, not awaiting selection.
 
-The apps use one CloudKit container, `iCloud.com.example.BoraMin`, across tvOS, iOS/iPadOS, and macOS. Store each user's records in their private database and a custom record zone. Keep local persistence so browsing, playback, and password retrieval work without an internet connection. Use CKSyncEngine to synchronize the local changes and apply remote changes. No BoraMin account or custom server is needed.
+The apps use one configured CloudKit container across tvOS, iOS/iPadOS, and macOS. Store each user's records in their private database and a custom record zone. Keep local persistence so browsing, playback, and password retrieval work without an internet connection. Use CKSyncEngine to synchronize the local changes and apply remote changes. No BoraMin account or custom server is needed.
 
 ## Multiple connections (October 26, 2026)
 
@@ -97,4 +97,4 @@ Adding the user-management entitlement may change which local preferences contai
 
 ## Production deployment
 
-On October 22, 2026 the reviewed schema was deployed through CloudKit Console, without copying development records. Production shows `BoraMinUserData.payload` as Encrypted Bytes and `password` as Encrypted String. The local Mac App Store Connect export was verified to use Production CloudKit and production APNs. Normal development builds remain on Development. See [TestFlight preparation](../testflight.md) for the export workflow, validation and remaining environment-isolation limits.
+On October 22, 2026 the reviewed schema was deployed through CloudKit Console, without copying development records. Production shows `BoraMinUserData.payload` as Encrypted Bytes and `password` as Encrypted String. The local Mac App Store Connect export was verified to use Production CloudKit and production APNs. Normal development builds remain on Development. Use the [archive helper](../tools/prepare_testflight.py) for local distribution export. Verify Production CloudKit and push entitlements on the exported app.
