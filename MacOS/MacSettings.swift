@@ -5,12 +5,15 @@ struct MacSettingsView: View {
     @ObservedObject private var cloud = ICloudSync.shared
     @AppStorage("displayAllFiles") private var allFiles = false
     @AppStorage("showDebugInfo") private var debug = false
+    @AppStorage(PlaybackRoute.alwaysUseAetherKey) private var alwaysUseAether = PlaybackRoute.defaultAlwaysUseAether
     @State private var showingLicences = false
     var body: some View {
         Form {
             Section {
                 Toggle("Display all files", isOn: $allFiles)
-                Text("When disabled, show folders and supported media file types.").font(.body).foregroundStyle(.secondary)
+                Toggle("Use AVPlayer when possible (Experimental)", isOn: Binding(
+                    get: { !alwaysUseAether }, set: { alwaysUseAether = !$0 }
+                ))
             }
             Section {
                 SubtitleSizeSetting()

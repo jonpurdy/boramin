@@ -10,9 +10,9 @@ MKV uses AetherEngine automatically except VP9. VP9 MKV now uses BoraMin's origi
 
 The engine probes embedded tracks before loading. Only an MKV with at least one ASS/SSA track enables raw ASS markup and the libass coordinator. For these files the engine's plain native subtitle renditions are disabled to prevent duplicate/unformatted ASS captions. The source subtitle picker exposes Off and all embedded subtitle tracks:
 
-- tvOS native playback: the unified **Audio & Subtitles** system menu above the scrubber.
-- iOS native playback: the unified **Audio & Subtitles** SwiftUI sheet, opened from the public video overlay.
-- macOS native playback: the unified **Audio & Subtitles** popover in the video overlay.
+- tvOS native playback: the **Subtitles** system menu above the scrubber.
+- iOS native playback: the **Subtitles** SwiftUI sheet, opened from the public video overlay.
+- macOS native playback: the **Subtitles** popover in the video overlay.
 - Software playback: the same track model and sheet/popover or tvOS menu.
 
 Selecting ASS/SSA activates libass; other source subtitle tracks use the existing plain-text/bitmap overlay. Selecting Off clears the overlay. Files without ASS retain their existing native subtitle preparation. Subtitles are initially off unless the engine selects a track; the presence of ASS does not force it on.

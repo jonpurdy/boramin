@@ -155,6 +155,7 @@ private struct MacFileRow: Identifiable {
 }
 
 private struct MacFilesView: View {
+    @AppStorage(PlaybackRoute.alwaysUseAetherKey) private var alwaysUseAether = PlaybackRoute.defaultAlwaysUseAether
     @ObservedObject var browser: Browser
     @ObservedObject var favorites: Favorites
     let search: String
@@ -182,7 +183,7 @@ private struct MacFilesView: View {
                 }.lineLimit(1)
             }.width(min: 250, ideal: 440)
             TableColumn("Kind") { row in Text(row.entry == nil ? "SMB Share" : row.kind).foregroundStyle(.secondary) }.width(100)
-            TableColumn("Size") { row in Text(row.directory ? "—" : (row.entry?.playbackDetails ?? ByteCountFormatter.string(fromByteCount: row.size, countStyle: .file))).foregroundStyle(.secondary).task(id: row.entry.map { browser.metadataTaskID($0) } ?? row.id) { if let entry = row.entry { await browser.loadMetadata(entry) } } }.width(270)
+            TableColumn("Size") { row in Text(row.directory ? "—" : (row.entry?.playbackDetails(alwaysUseAether: alwaysUseAether) ?? ByteCountFormatter.string(fromByteCount: row.size, countStyle: .file))).foregroundStyle(.secondary).task(id: row.entry.map { browser.metadataTaskID($0) } ?? row.id) { if let entry = row.entry { await browser.loadMetadata(entry) } } }.width(270)
         }
         .contextMenu(forSelectionType: String.self) { ids in
             if let row = rows.first(where: { ids.contains($0.id) }) {

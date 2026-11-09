@@ -156,20 +156,25 @@ private let softwareLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, ca
             }
             #endif
             if controlsVisible {
+                #if os(tvOS)
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    tvTransportOverlay
+                }
+                #else
                 VStack {
                     HStack {
                         Button("Close", systemImage: "xmark") { model.stop(); close() }
                         Text(model.media.title).lineLimit(1)
                         Spacer()
-                        PlaybackTracksButton(tracks: tracks) { presented in
-                            tracksPresented = presented; activity()
-                        }
+                        trackAndSettingsButtons
                     }
                     Spacer()
                     transport
                 }
                 .padding(30)
                 .background(LinearGradient(colors: [.black.opacity(0.7), .clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom))
+                #endif
             }
         }
         .foregroundStyle(.white)
@@ -238,6 +243,53 @@ private let softwareLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, ca
         }
         #endif
     }
+    #if os(tvOS)
+    private var tvTransportOverlay: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text(model.media.title)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                trackAndSettingsButtons
+            }
+            transport
+        }
+        .padding(.horizontal, 90)
+        .padding(.top, 40)
+        .padding(.bottom, 60)
+        .background(alignment: .bottom) {
+            LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+        }
+    }
+    #endif
+
+    private var trackAndSettingsButtons: some View {
+        #if os(tvOS)
+        let spacing: CGFloat? = 8
+        #else
+        let spacing: CGFloat? = nil
+        #endif
+        return HStack(spacing: spacing) {
+            PlaybackTracksButton(tracks: tracks) { presented in
+                tracksPresented = presented
+                activity()
+            }
+            Menu {
+                Toggle("Show Debug Info", isOn: $showDebug)
+            } label: {
+                Label("Settings", systemImage: "gearshape").labelStyle(.iconOnly)
+            }
+            #if os(macOS)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            #endif
+            .accessibilityLabel("Settings")
+            .onChange(of: showDebug) { _, _ in activity() }
+        }
+    }
+
     private var transport: some View {
         VStack(spacing: 14) {
             HStack {
@@ -264,13 +316,34 @@ private let softwareLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, ca
             }.monospacedDigit().font(.caption)
             #if !os(tvOS)
             HStack(spacing: 35) {
-                Button("Back 10 seconds", systemImage: "gobackward.10") { model.seek(to: model.position - 10); activity() }
-                Button(engine.state == .playing ? "Pause" : "Play", systemImage: engine.state == .playing ? "pause.fill" : "play.fill") { engine.togglePlayPause(); activity() }
-                Button("Forward 10 seconds", systemImage: "goforward.10") { model.seek(to: model.position + 10); activity() }
-            }.labelStyle(.iconOnly).font(.title2)
+                transportButton("Back 10 seconds", icon: "gobackward.10") { model.seek(to: model.position - 10) }
+                transportButton(engine.state == .playing ? "Pause" : "Play",
+                                icon: engine.state == .playing ? "pause.fill" : "play.fill") { engine.togglePlayPause() }
+                transportButton("Forward 10 seconds", icon: "goforward.10") { model.seek(to: model.position + 10) }
+            }
+            .labelStyle(.iconOnly)
+            #if os(macOS)
+            .font(.title)
+            #else
+            .font(.title2)
+            #endif
             #endif
         }
     }
+    #if !os(tvOS)
+    private func transportButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            activity()
+        } label: {
+            Label(title, systemImage: icon)
+                #if os(macOS)
+                .frame(width: 48, height: 36)
+                #endif
+        }
+    }
+    #endif
+
     private func activity(wakeOLED: Bool = true) {
         #if os(tvOS)
         if wakeOLED { restartPausedOLEDDimming() }
@@ -320,7 +393,10 @@ struct AetherPlainSubtitles: View {
                                 .padding(6).background(.black.opacity(0.65))
                         }
                     }
-                }.padding(.horizontal, 30).padding(.bottom, controlsVisible ? 160 : 35)
+                }
+                .padding(.horizontal, 30)
+                .padding(.bottom, controlsVisible ? 160 : 35)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
     }

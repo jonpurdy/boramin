@@ -26,7 +26,13 @@ struct SubtitleSizeSetting: View {
     @ObservedObject private var appearance = SubtitleAppearance.shared
     var body: some View {
         Picker("Subtitle Size", selection: Binding(get: { appearance.percent }, set: { appearance.select($0) })) {
-            ForEach(SubtitleAppearance.sizes, id: \.self) { Text("\($0)%").tag($0) }
+            ForEach(SubtitleAppearance.sizes, id: \.self) { size in
+                #if os(tvOS)
+                Text(size == appearance.percent ? "✓ \(size)%" : "\(size)%").tag(size)
+                #else
+                Text("\(size)%").tag(size)
+                #endif
+            }
         }
     }
 }

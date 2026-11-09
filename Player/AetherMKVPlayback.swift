@@ -89,7 +89,7 @@ final class AetherMKVPlayback {
             self.onItemChanged?(player, item)
         }
     }
-    static func open(source: CachedRemoteFile, fileExtension: String) async throws -> AetherMKVPlayback {
+    static func open(source: CachedRemoteFile, fileExtension: String, forceBoraMinUI: Bool = false) async throws -> AetherMKVPlayback {
         let formatHint: String? = fileExtension.lowercased() == "mkv" ? "matroska" : nil
         if CommandLine.arguments.contains("--aether-diagnostics") {
             EngineLog.handler = { print($0); fflush(stdout) }
@@ -98,6 +98,7 @@ final class AetherMKVPlayback {
         engine.logTag = "BoraMin-Aether"
         engine.backgroundPlaybackEnabled = false
         var options = LoadOptions()
+        if forceBoraMinUI { options.preferredDecodePath = .software }
         options.autoplay = false
         options.displayCriteriaOwner = .avKit
         options.prepareNativeSubtitles = true
@@ -145,7 +146,7 @@ final class AetherMKVPlayback {
                     // alternate host supports (for example AAC with a Program Config Element).
                     // Reopen through the engine's public API once; SMB/network failures retain
                     // their original error and never trigger a decoder retry.
-                    guard failure.domain == AVFoundationErrorDomain, failure.code == -11829,
+                    guard !forceBoraMinUI, failure.domain == AVFoundationErrorDomain, failure.code == -11829,
                           underlying?.domain == "CoreMediaErrorDomain", underlying?.code == -12848 else { throw error }
                     print("BORAMIN_AETHER native configuration rejected; retrying alternate playback path")
                     options.preferredDecodePath = .software

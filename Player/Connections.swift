@@ -427,21 +427,24 @@ extension PlaybackFile {
 }
 
 extension PlaybackFile {
-    @MainActor func listPlaybackDetails(duration: Double) -> String {
+    @MainActor func listPlaybackDetails(duration: Double, alwaysUseAether: Bool) -> String {
         let key = MediaMetadataCache.key(server: URL(string: server)!, connectionID: connectionID, share: share, path: path, size: size)
         // Watching probes only visible uncached rows, then reuses this device-local metadata.
-        let route = MediaMetadataCache.shared.value(for: key)?.route ?? PlaybackRoute.expected(fileExtension: (name as NSString).pathExtension, vp9: nil)
-        return BrowserEntry(name: name, path: path, directory: false, size: size, duration: duration, playbackRoute: route).playbackDetails
+        let record = MediaMetadataCache.shared.value(for: key)
+        let route = record?.route ?? PlaybackRoute.expected(fileExtension: (name as NSString).pathExtension, vp9: nil)
+        return BrowserEntry(name: name, path: path, directory: false, size: size, duration: duration, playbackRoute: route)
+            .playbackDetails(alwaysUseAether: alwaysUseAether)
     }
 }
 
 struct WatchingPlaybackDetails: View {
+    @AppStorage(PlaybackRoute.alwaysUseAetherKey) private var alwaysUseAether = PlaybackRoute.defaultAlwaysUseAether
     let file: PlaybackFile
     let duration: Double
     @ObservedObject var browser: Browser
     @ObservedObject private var cache = MediaMetadataCache.shared
     var body: some View {
-        Text(file.listPlaybackDetails(duration: duration))
+        Text(file.listPlaybackDetails(duration: duration, alwaysUseAether: alwaysUseAether))
             .task(id: file.key + (file.connectionID ?? "") + (browser.busy || browser.playing != nil ? "suspended" : "visible")) {
                 await browser.loadWatchingMetadata(file)
             }

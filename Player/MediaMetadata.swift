@@ -5,6 +5,9 @@ import Combine
 enum PlaybackRoute: String, Codable {
     case avPlayer = "AVP", aether = "AEP", hardwareVP9 = "HW9"
 
+    static let alwaysUseAetherKey = "alwaysUseAetherPlayer"
+    static let defaultAlwaysUseAether = true
+
     /// Expected production route, not a guarantee that this codec/profile will play.
     static func expected(fileExtension: String, vp9: Bool?) -> Self? {
         let ext = fileExtension.lowercased()
@@ -46,7 +49,8 @@ enum PlaybackRoute: String, Codable {
     func save(duration: Double?, route: PlaybackRoute, modified: Double, for key: String) {
         guard modified.isFinite else { return }
         let duration = duration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
-        records[key] = Record(duration: duration, route: route, modified: modified, stored: Date().timeIntervalSince1970)
+        records[key] = Record(duration: duration, route: route, modified: modified,
+                              stored: Date().timeIntervalSince1970)
         if records.count > limit {
             for key in records.keys.sorted(by: { records[$0]!.stored > records[$1]!.stored }).dropFirst(limit) { records.removeValue(forKey: key) }
         }

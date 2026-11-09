@@ -77,7 +77,11 @@ struct BrowserEntry: Identifiable {
         let sizeText = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
         return durationText.map { "\($0) · \(sizeText)" } ?? sizeText
     }
-    var playbackDetails: String { playbackRoute.map { "\($0.rawValue) · \(sizeAndDuration)" } ?? sizeAndDuration }
+    func playbackDetails(alwaysUseAether: Bool) -> String {
+        guard let playbackRoute else { return sizeAndDuration }
+        let route = alwaysUseAether && playbackRoute == .avPlayer ? .aether : playbackRoute
+        return "\(route.rawValue) · \(sizeAndDuration)"
+    }
     var playable: Bool { ["mp4", "m4v", "mov", "mkv", "webm", "avi", "ts", "m2ts", "mts", "mpg", "mpeg", "vob", "wmv", "asf", "flv", "ogv", "ogg", "rm", "rmvb", "3gp", "3g2"].contains((name as NSString).pathExtension.lowercased()) }
 }
 

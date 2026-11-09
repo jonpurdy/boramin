@@ -97,7 +97,7 @@ October 27: the installed Mac app logged POSIX I/O error 5; a model stress run a
 
 ## October 30 session findings
 
-- Show Debug Info can be toggled during native playback: tvOS transport Settings menu, Mac AVKit action menu, and an iOS Settings menu beside Audio & Subtitles. These use the existing saved preference and take effect immediately.
+- Show Debug Info can be toggled during native playback: tvOS transport Settings menu, Mac AVKit action menu, and an iOS Settings button in the bottom overlay above the AVKit controls. These use the existing saved preference and take effect immediately.
 - The Mac connection failure after updating was confirmed in system logs as `Local network prohibited`, while TCP port 445 was reachable on both servers. Restoring macOS Local Network permission resolved it; no SMB code change was needed.
 - Apple TV list-navigation/background-reopen exits remain unexplained. No useful termination stack was captured and no crash fix was applied. Prefer reproducing in a TestFlight-installed build and collecting its crash report. The directly installed developer build does not report through TestFlight. No persistent file logger or report-on-relaunch dialog was implemented.
 

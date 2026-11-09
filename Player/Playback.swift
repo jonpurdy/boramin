@@ -190,17 +190,20 @@ final class PreparedMedia: Identifiable {
         guard size > 0 else { throw PlayerError("This file is empty or its size is unavailable.") }
         let source = try await session.openFile(path: path, size: size, cancellation: cancellation)
         let ext = (path as NSString).pathExtension
+        let alwaysUseAether = UserDefaults.standard.object(forKey: PlaybackRoute.alwaysUseAetherKey) as? Bool
+            ?? PlaybackRoute.defaultAlwaysUseAether
+        let usesDirectProbe = ["mp4", "m4v", "mov", "webm"].contains(ext.lowercased())
         let transport = try StreamingSession(source: source, fileExtension: (path as NSString).pathExtension)
         do {
             try await transport.start()
             let subtitles = await ExternalSubtitles.discover(session: session, path: path, playbackCancellation: cancellation)
             await transport.setExternalSubtitles(subtitles)
             guard !cancellation.cancelled else { throw CancellationError() }
-            // Identify VP9 before the general MKV route, using the existing demuxer.
-            // If the legacy probe cannot read another MKV codec, let AetherEngine probe it.
-            let vp9MKV: Bool
-            if ext.lowercased() == "mkv" {
-                vp9MKV = try await Task.detached(priority: .userInitiated) {
+            // Check for VP9 before opening an AetherEngine container. If the legacy
+            // probe cannot identify the stream, leave that container to AetherEngine.
+            let usesHardwareVP9: Bool
+            if !usesDirectProbe && (ext.lowercased() == "mkv" || alwaysUseAether) {
+                usesHardwareVP9 = try await Task.detached(priority: .userInitiated) {
                     var info = MediaInfo(), error = [CChar](repeating: 0, count: 512)
                     guard let reader = media_open_io(source.makeIO(), &info, &error, error.count) else {
                         if cancellation.cancelled { throw CancellationError() }
@@ -209,10 +212,10 @@ final class PreparedMedia: Identifiable {
                     defer { media_close(reader) }
                     return info.vp9 != 0
                 }.value
-            } else { vp9MKV = false }
+            } else { usesHardwareVP9 = false }
             guard !cancellation.cancelled else { throw CancellationError() }
-            if !vp9MKV && !["mp4", "m4v", "mov", "webm"].contains(ext.lowercased()) {
-                let timeline = try await transport.configureAetherPlayback()
+            if !usesHardwareVP9 && !usesDirectProbe {
+                let timeline = try await transport.configureAetherPlayback(forceBoraMinUI: alwaysUseAether)
                 guard !cancellation.cancelled else { throw CancellationError() }
                 guard let info = await transport.aetherMediaInfo else { throw PlayerError("AetherEngine did not provide media information.") }
                 return Self(title: title, source: transport.sourceURL, timeline: timeline, usesSampleBufferVideo: false,
@@ -225,21 +228,21 @@ final class PreparedMedia: Identifiable {
                     throw PlayerError("Read streaming media: \(String(cString: error))")
                 }
                 defer { media_close(reader) }
-                let aetherContainer = info.vp9 == 0 && ext.lowercased() == "webm"
+                let aetherContainer = info.vp9 == 0 && (alwaysUseAether || ext.lowercased() == "webm")
                 let demuxed = needsDemuxedPlayback(info, fileExtension: ext) && !aetherContainer
                 let format = demuxed ? try validateDecoder(info, configuration: configuration(reader)) : nil
                 let keyframes = demuxed ? indexedKeyframes(reader) : []
                 return (info, keyframes, format)
             }.value
             if cancellation.cancelled { throw CancellationError() }
-            if info.vp9 == 0 && ext.lowercased() == "webm" {
-                let timeline = try await transport.configureAetherPlayback()
+            if info.vp9 == 0 && (alwaysUseAether || ext.lowercased() == "webm") {
+                let timeline = try await transport.configureAetherPlayback(forceBoraMinUI: alwaysUseAether)
                 if cancellation.cancelled { throw CancellationError() }
                 playbackLog.notice("AetherEngine container streaming enabled")
                 return Self(title: title, source: transport.sourceURL, timeline: timeline, usesSampleBufferVideo: false,
                             directory: directory, info: info, streaming: transport, keyframes: [], positionKey: positionKey)
             }
-            if vp9MKV { playbackLog.notice("VP9 MKV using original hardware decoder and native AVKit controls") }
+            if usesHardwareVP9 && ext.lowercased() == "mkv" { playbackLog.notice("VP9 MKV using original hardware decoder and native AVKit controls") }
             let demuxed = needsDemuxedPlayback(info, fileExtension: ext)
             if demuxed { try transport.configureAudio(duration: info.duration) }
             playbackLog.notice("BORAMIN_STREAM ready; fetched \(source.fetchedBytes) of \(size) bytes before playback")
@@ -873,10 +876,6 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             // directly to AVKit's built-in audio and subtitle controls.
             showsPlaybackControls = true
             player?.appliesMediaSelectionCriteriaAutomatically = true
-            #if os(tvOS)
-            allowedSubtitleOptionLanguages = nil
-            requiresFullSubtitles = false // Keep the standard Off / Auto choices.
-            #endif
         }
         if media.usesSampleBufferVideo && media.streaming != nil { player?.automaticallyWaitsToMinimizeStalling = false }
         diagnosticsObservers.append(NotificationCenter.default.addObserver(forName: AVPlayerItem.playbackStalledNotification, object: item, queue: .main) { [weak self] _ in
@@ -1226,7 +1225,11 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
     private func refreshTransportMenu() {
         guard active else { return }
         var menus: [UIMenuElement] = []
-        if let tracks { menus.append(tracks.menu()) }
+        let usesAppSubtitleMenu = tracks?.hasAppSubtitleChoices == true
+        // Filter AVKit's subtitle options when BoraMin supplies its own picker.
+        // Leave native options, including Auto, available for native-only media.
+        allowedSubtitleOptionLanguages = usesAppSubtitleMenu ? [] : nil
+        if let tracks { menus.append(contentsOf: tracks.trackMenus(includeSubtitles: usesAppSubtitleMenu)) }
         let debug = UIAction(title: "Show Debug Info", identifier: UIAction.Identifier("boramin.debug"),
                              state: UserDefaults.standard.bool(forKey: "showDebugInfo") ? .on : .off) { [weak self] _ in
             guard let self, self.active else { return }
@@ -1329,7 +1332,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
             host.view.backgroundColor = .clear; host.view.translatesAutoresizingMaskIntoConstraints = false
             host.sizingOptions = .intrinsicContentSize
             addChild(host); overlay.addSubview(host.view); host.didMove(toParent: self)
-            NSLayoutConstraint.activate([host.view.trailingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.trailingAnchor, constant: -20), host.view.topAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.topAnchor, constant: 12)])
+            NSLayoutConstraint.activate([host.view.trailingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.trailingAnchor, constant: -20), host.view.bottomAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.bottomAnchor, constant: -112)])
             tracksHost = host
         }
         #endif

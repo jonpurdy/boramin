@@ -281,6 +281,11 @@ private let browserLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, cat
             if let route = PlaybackRoute.expected(fileExtension: (entry.name as NSString).pathExtension, vp9: media.info.vp9 != 0) {
                 let key = MediaMetadataCache.key(server: session.url, connectionID: connectionID, share: share, path: entry.path, size: entry.size)
                 metadataCache.save(duration: media.info.duration, route: route, modified: entry.modified, for: key)
+                if let record = metadataCache.value(for: key, modified: entry.modified),
+                   let index = entries.firstIndex(where: { $0.id == entry.id && $0.size == entry.size && $0.modified == entry.modified }) {
+                    entries[index].playbackRoute = record.route
+                    entries[index].duration = record.duration
+                }
             }
             if let file = PlaybackFile(server: session.url, share: share, path: entry.path, size: entry.size,
                                        username: username, domain: domain, connectionID: connectionID) { PlaybackPositions.shared.remember(file) }

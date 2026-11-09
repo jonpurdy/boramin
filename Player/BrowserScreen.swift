@@ -2,6 +2,7 @@ import SwiftUI
 
 #if os(tvOS) || os(iOS)
 struct BrowserScreen: View {
+    @AppStorage(PlaybackRoute.alwaysUseAetherKey) private var alwaysUseAether = PlaybackRoute.defaultAlwaysUseAether
     private var listPrimaryFont: Font? {
         #if os(tvOS)
         .headline.weight(.regular)
@@ -289,7 +290,7 @@ struct BrowserScreen: View {
                                     else if entry.playable { browser.play(entry) }
                                 } label: {
                                     mediaRow(symbol: entry.directory ? "folder" : "film", name: entry.name, progress: entry.progress) {
-                                        if !entry.directory { Text(entry.playbackDetails) }
+                                        if !entry.directory { Text(entry.playbackDetails(alwaysUseAether: alwaysUseAether)) }
                                     }
                                 }
                                     .task(id: browser.metadataTaskID(entry)) { await browser.loadMetadata(entry) }
@@ -351,9 +352,11 @@ struct BrowserScreen: View {
             }
             Section {
                 Toggle("Display all files", isOn: $displayAllFiles)
+                Toggle("Use AVPlayer when possible (Experimental)", isOn: Binding(
+                    get: { !alwaysUseAether }, set: { alwaysUseAether = !$0 }
+                ))
                     .toggleStyle(.switch)
             } footer: {
-                Text("Show other files alongside folders and supported videos. Hidden files stay hidden.").font(.body).foregroundStyle(.secondary)
             }
             #if os(tvOS)
             Section {
@@ -362,7 +365,8 @@ struct BrowserScreen: View {
                 if oledMode {
                     Picker("OLED dimming", selection: $oledDimming) {
                         ForEach(OLEDDimming.allCases, id: \.self) { level in
-                            Text(level.remainingBrightness, format: .percent).tag(level)
+                            let percentage = level.remainingBrightness.formatted(.percent)
+                            Text(level == oledDimming ? "✓ \(percentage)" : percentage).tag(level)
                         }
                     }
                 }
