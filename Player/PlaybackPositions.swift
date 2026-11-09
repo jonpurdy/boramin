@@ -1,8 +1,8 @@
 import Foundation
 import CryptoKit
 
-/// Portable subtitle identity stored only alongside an unfinished bookmark.
-struct SavedSubtitleSelection: Codable, Equatable {
+/// Portable track identity stored only alongside an unfinished bookmark.
+struct SavedTrackSelection: Codable, Equatable {
     enum Kind: String, Codable { case off, external, engine, native }
     let kind: Kind
     var filename: String?
@@ -35,6 +35,8 @@ struct SavedSubtitleSelection: Codable, Equatable {
     }
 }
 
+typealias SavedSubtitleSelection = SavedTrackSelection
+
 struct PlaybackProgress {
     let seconds: Double
     let duration: Double
@@ -51,6 +53,7 @@ struct PlaybackProgress {
     private let defaults: UserDefaults
     private let storageKey = "playbackPositions.v1"
     private let limit = 500
+    static let audioStorageKey = "playbackAudio.v1"
     static let subtitleStorageKey = "playbackSubtitles.v1"
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
@@ -91,18 +94,21 @@ struct PlaybackProgress {
         return PlaybackProgress(seconds: seconds, duration: duration)
     }
 
-    func save(_ seconds: Double, duration: Double, for key: String, subtitle: SavedSubtitleSelection? = nil) {
+    func save(_ seconds: Double, duration: Double, for key: String, subtitle: SavedSubtitleSelection? = nil, audio: SavedTrackSelection? = nil) {
         guard seconds.isFinite, duration.isFinite, duration > 0, seconds >= 0 else { return }
         guard seconds > 0, seconds < duration else { clear(key); return }
         var records = defaults.dictionary(forKey: storageKey) as? [String: [String: Double]] ?? [:]
         var subtitles = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
         var resets = defaults.dictionary(forKey: "playbackResets.v1") as? [String: Double] ?? [:]
+        var audioTracks = defaults.dictionary(forKey: Self.audioStorageKey) as? [String: String] ?? [:]
+        let encodedAudio = audio?.encoded
         let encodedSubtitle = subtitle?.encoded
         // A nil subtitle preserves the saved choice. An unchanged checkpoint
         // must not bump Watching order or trigger persistence/cloud work, but
         // a new save must still supersede an existing reset marker.
         if records[key]?["seconds"] == seconds, records[key]?["duration"] == duration,
-           encodedSubtitle == nil || subtitles[key] == encodedSubtitle, resets[key] == nil {
+           encodedSubtitle == nil || subtitles[key] == encodedSubtitle,
+           encodedAudio == nil || audioTracks[key] == encodedAudio, resets[key] == nil {
             return
         }
         records[key] = ["seconds": seconds, "duration": duration, "updated": Date().timeIntervalSince1970]
@@ -114,6 +120,8 @@ struct PlaybackProgress {
         if let encodedSubtitle { subtitles[key] = encodedSubtitle }
         subtitles = subtitles.filter { records[$0.key] != nil }
         defaults.set(subtitles, forKey: Self.subtitleStorageKey)
+        if let encodedAudio { audioTracks[key] = encodedAudio }
+        defaults.set(audioTracks.filter { records[$0.key] != nil }, forKey: Self.audioStorageKey)
         if resets.removeValue(forKey:key) != nil { defaults.set(resets,forKey:"playbackResets.v1") }
     }
 
@@ -124,6 +132,7 @@ struct PlaybackProgress {
         var subtitles = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
         subtitles.removeValue(forKey: key)
         defaults.set(subtitles, forKey: Self.subtitleStorageKey)
+        applySyncedAudio(nil, for: key)
         var resets=defaults.dictionary(forKey:"playbackResets.v1") as? [String:Double] ?? [:]
         resets[key]=Date().timeIntervalSince1970
         if resets.count>500 {
@@ -140,14 +149,31 @@ struct PlaybackProgress {
         guard let progress = progress(for: key), subtitleSelection(for: key) != selection else { return }
         save(progress.seconds, duration: progress.duration, for: key, subtitle: selection)
     }
+    func audioSelection(for key: String) -> SavedTrackSelection? {
+        guard progress(for: key) != nil else { return nil }
+        return SavedTrackSelection.decode(defaults.dictionary(forKey: Self.audioStorageKey)?[key] as? String)
+    }
+
+    func saveAudio(_ selection: SavedTrackSelection, for key: String) {
+        guard let progress = progress(for: key), audioSelection(for: key) != selection else { return }
+        save(progress.seconds, duration: progress.duration, for: key, audio: selection)
+    }
+
+    func applySyncedAudio(_ encoded: String?, for key: String) {
+        applySyncedTrack(encoded, for: key, storageKey: Self.audioStorageKey)
+    }
+
     /// Apply the subtitle field from the SAME cloud position record, retaining its timestamp.
     func applySyncedSubtitle(_ encoded: String?, for key: String) {
-        let previous = defaults.dictionary(forKey: Self.subtitleStorageKey) as? [String: String] ?? [:]
+        applySyncedTrack(encoded, for: key, storageKey: Self.subtitleStorageKey)
+    }
+    private func applySyncedTrack(_ encoded: String?, for key: String, storageKey: String) {
+        let previous = defaults.dictionary(forKey: storageKey) as? [String: String] ?? [:]
         var subtitles = previous
         subtitles[key] = progress(for: key) == nil ? nil : SavedSubtitleSelection.decode(encoded)?.encoded
         let active = Set(allProgress().keys)
         subtitles = subtitles.filter { active.contains($0.key) }
-        if subtitles != previous { defaults.set(subtitles, forKey: Self.subtitleStorageKey) }
+        if subtitles != previous { defaults.set(subtitles, forKey: storageKey) }
     }
 }
 

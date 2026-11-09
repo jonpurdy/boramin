@@ -335,7 +335,7 @@ private final class MacPlaybackHostWindow: NSWindow {
     }
     private func savePosition() {
         guard !stopped, !completed, restored, let key = media.positionKey else { return }
-        PlaybackPositions.shared.save(player.currentTime().seconds, duration: media.info.duration, for: key, subtitle: media.subtitleSelection)
+        PlaybackPositions.shared.save(player.currentTime().seconds, duration: media.info.duration, for: key, subtitle: media.subtitleSelection, audio: media.audioSelection)
     }
     private func fail(_ message: String, allowEngineRecovery: Bool = true) {
         guard !stopped, !reportingFailure else { return }

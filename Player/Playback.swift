@@ -124,6 +124,7 @@ final class PreparedMedia: Identifiable {
     let streaming: StreamingSession?
     let keyframes: [Double]
     let positionKey: String?
+    @MainActor var audioSelection: SavedTrackSelection?
     @MainActor var subtitleSelection: SavedSubtitleSelection?
     let videoFormat: CMVideoFormatDescription?
 
@@ -215,7 +216,7 @@ final class PreparedMedia: Identifiable {
             } else { usesHardwareVP9 = false }
             guard !cancellation.cancelled else { throw CancellationError() }
             if !usesHardwareVP9 && !usesDirectProbe {
-                let timeline = try await transport.configureAetherPlayback(forceBoraMinUI: alwaysUseAether)
+                let timeline = try await transport.configureAetherPlayback(forceBoraMinUI: alwaysUseAether, positionKey: positionKey)
                 guard !cancellation.cancelled else { throw CancellationError() }
                 guard let info = await transport.aetherMediaInfo else { throw PlayerError("AetherEngine did not provide media information.") }
                 return Self(title: title, source: transport.sourceURL, timeline: timeline, usesSampleBufferVideo: false,
@@ -236,7 +237,7 @@ final class PreparedMedia: Identifiable {
             }.value
             if cancellation.cancelled { throw CancellationError() }
             if info.vp9 == 0 && (alwaysUseAether || ext.lowercased() == "webm") {
-                let timeline = try await transport.configureAetherPlayback(forceBoraMinUI: alwaysUseAether)
+                let timeline = try await transport.configureAetherPlayback(forceBoraMinUI: alwaysUseAether, positionKey: positionKey)
                 if cancellation.cancelled { throw CancellationError() }
                 playbackLog.notice("AetherEngine container streaming enabled")
                 return Self(title: title, source: transport.sourceURL, timeline: timeline, usesSampleBufferVideo: false,
@@ -1121,7 +1122,7 @@ final class NativePlayerController: AVPlayerViewController, AVPlayerViewControll
               player.currentItem?.status == .readyToPlay else { return }
         let seconds = player.currentTime().seconds
         guard seconds.isFinite else { return }
-        PlaybackPositions.shared.save(seconds, duration: media.info.duration, for: key, subtitle: media.subtitleSelection)
+        PlaybackPositions.shared.save(seconds, duration: media.info.duration, for: key, subtitle: media.subtitleSelection, audio: media.audioSelection)
         playbackLog.debug("BORAMIN_RESUME saved \(seconds)s")
     }
     #if os(iOS)

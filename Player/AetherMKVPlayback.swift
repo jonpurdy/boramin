@@ -89,7 +89,7 @@ final class AetherMKVPlayback {
             self.onItemChanged?(player, item)
         }
     }
-    static func open(source: CachedRemoteFile, fileExtension: String, forceBoraMinUI: Bool = false) async throws -> AetherMKVPlayback {
+    static func open(source: CachedRemoteFile, fileExtension: String, forceBoraMinUI: Bool = false, positionKey: String? = nil) async throws -> AetherMKVPlayback {
         let formatHint: String? = fileExtension.lowercased() == "mkv" ? "matroska" : nil
         if CommandLine.arguments.contains("--aether-diagnostics") {
             EngineLog.handler = { print($0); fflush(stdout) }
@@ -116,11 +116,16 @@ final class AetherMKVPlayback {
                 options.preserveASSMarkup = styled
                 // ASS files use source-track selection + our overlay, avoiding a second plain-text rendition.
                 options.prepareNativeSubtitles = !styled
-                let supported = probe.audioTracks.filter { ["aac", "ac3", "eac3", "alac", "mp3"].contains($0.codec.lowercased()) }
-                let preferredAudio = (supported.first(where: { $0.isDefault }) ?? supported.first).map { Int32($0.id) }
-                if let preferredAudio { print("BORAMIN_AETHER preferred native audio stream=\(preferredAudio)") }
+                let savedAudio = CommandLine.arguments.contains("--no-playback-history") ? nil
+                    : positionKey.flatMap { PlaybackPositions.shared.audioSelection(for: $0) }
+                let restoredAudio = probe.audioTracks.first {
+                    savedAudio?.kind == .engine && $0.id == savedAudio?.stream &&
+                    $0.codec == savedAudio?.codec && $0.language == savedAudio?.language && $0.name == savedAudio?.name
+                }
+                let initialAudio = (restoredAudio ?? probe.audioTracks.first(where: { $0.isDefault }) ?? probe.audioTracks.first)
+                    .map { Int32($0.id) }
                 do {
-                    try await engine.load(source: .custom(AetherFileReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
+                    try await engine.load(source: .custom(AetherFileReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: initialAudio)
                     // load() can return before AVFoundation parses the first HLS segments.
                     // Keep startup readiness inside this catch so late configuration
                     // rejections use the same single retry on every platform.
@@ -150,7 +155,7 @@ final class AetherMKVPlayback {
                           underlying?.domain == "CoreMediaErrorDomain", underlying?.code == -12848 else { throw error }
                     print("BORAMIN_AETHER native configuration rejected; retrying alternate playback path")
                     options.preferredDecodePath = .software
-                    try await engine.load(source: .custom(AetherFileReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: preferredAudio)
+                    try await engine.load(source: .custom(AetherFileReader(source: source), formatHint: formatHint), options: options, audioSourceStreamIndex: initialAudio)
                 }
                 try Task.checkCancellation()
                 if let item = engine.currentAVPlayer?.currentItem, item.status == .failed {

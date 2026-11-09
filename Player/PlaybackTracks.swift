@@ -25,6 +25,8 @@ import AetherEngine
     private var stopped = false
     private var engineBound = false
     private var didBind = false
+    private var savedAudio: SavedTrackSelection?
+    private var onAudioChanged: ((SavedTrackSelection) -> Void)?
     private var pendingSubtitle: SavedSubtitleSelection?
     private var latestSubtitle: SavedSubtitleSelection?
     private var missingSavedSubtitle = false
@@ -34,6 +36,12 @@ import AetherEngine
         self.init(subtitles: media.streaming?.externalSubtitles, backend: media.streaming?.aetherPlayback)
         if !CommandLine.arguments.contains("--no-playback-history"), let key = media.positionKey {
             configureBookmark(key: key, positions: .shared) { [weak media] in media?.subtitleSelection = $0 }
+            savedAudio = PlaybackPositions.shared.audioSelection(for: key)
+            media.audioSelection = savedAudio
+            onAudioChanged = { [weak media] selection in
+                media?.audioSelection = selection
+                PlaybackPositions.shared.saveAudio(selection, for: key)
+            }
         }
     }
     init(subtitles: ExternalSubtitles?, backend: AetherMKVPlayback?) {
@@ -88,7 +96,12 @@ import AetherEngine
                 self?.audio = tracks.map { Audio(id: $0.id, name: "\($0.name) — \($0.codec.uppercased())", supported: true) }
             }.store(in: &subscriptions)
             backend.engine.$activeAudioTrackIndex.receive(on: DispatchQueue.main).sink { [weak self, weak backend] _ in
-                self?.selectedAudio = backend?.engine.activeAudioTrackIndex
+                guard let self, !self.stopped else { return }
+                self.selectedAudio = backend?.engine.activeAudioTrackIndex
+                if let track = backend?.engine.audioTracks.first(where: { $0.id == self.selectedAudio }) {
+                    self.recordAudio(SavedTrackSelection(kind: .engine, stream: track.id, name: track.name,
+                                                         language: track.language, codec: track.codec))
+                }
             }.store(in: &subscriptions)
         } else if let item = player?.currentItem {
             task?.cancel()
@@ -103,6 +116,11 @@ import AetherEngine
                     let supported = playable.contains(option) && option.mediaSubTypes.contains { decoders.contains($0.uint32Value) }
                     return Audio(id: index, name: option.displayName + (supported ? "" : " (Unsupported)"), supported: supported)
                 }
+                if let saved = self.savedAudio, saved.kind == .native, let data = saved.nativePropertyList,
+                   let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+                   let option = group.mediaSelectionOption(withPropertyList: plist), playable.contains(option) {
+                    item.select(option, in: group)
+                }
                 self.refreshAudio()
                 self.observer = NotificationCenter.default.addObserver(forName: AVPlayerItem.mediaSelectionDidChangeNotification, object: item, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.refreshAudio() }
@@ -113,11 +131,22 @@ import AetherEngine
     private func refreshAudio() {
         guard let group, let selected = player?.currentItem?.currentMediaSelection.selectedMediaOption(in: group) else { selectedAudio = nil; return }
         selectedAudio = options.firstIndex(of: selected)
+        let plist = try? PropertyListSerialization.data(fromPropertyList: selected.propertyList(), format: .binary, options: 0)
+        recordAudio(SavedTrackSelection(kind: .native, name: selected.displayName, nativePropertyList: plist))
     }
+    private func recordAudio(_ selection: SavedTrackSelection) {
+        guard selection != savedAudio else { return }
+        savedAudio = selection
+        onAudioChanged?(selection)
+    }
+
     func selectAudio(_ id: Int) {
         guard !stopped, audio.contains(where: { $0.id == id && $0.supported }) else { return }
         if let backend { backend.engine.selectAudioTrack(index: id) }
-        else if let group, options.indices.contains(id) { player?.currentItem?.select(options[id], in: group) }
+        else if let group, options.indices.contains(id) {
+            player?.currentItem?.select(options[id], in: group)
+            refreshAudio()
+        }
         selectedAudio = id
     }
     func stop() {
@@ -126,6 +155,7 @@ import AetherEngine
         if let observer { NotificationCenter.default.removeObserver(observer); self.observer = nil }
         if ownsSubtitles { subtitles.stop() }
         onSubtitleChanged = nil
+        onAudioChanged = nil
         player = nil; group = nil; options = []
     }
 

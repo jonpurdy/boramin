@@ -192,9 +192,13 @@ private final class ProbeFrames: @unchecked Sendable {
         if hardwareVP9, (!media.usesSampleBufferVideo || media.info.vp9 == 0) {
             throw LiveCheckError("Expected dedicated VP9 hardware playback.")
         }
+        let backend = media.streaming?.aetherPlayback
+        if !hardwareVP9, backend == nil {
+            throw LiveCheckError("Expected AetherEngine playback for this fixture.")
+        }
         MacPlaybackWindow.present(media: media) { }
         let frames = ProbeFrames()
-        let engine = media.streaming?.aetherPlayback?.engine
+        let engine = backend?.engine
         engine?.setSoftwareVideoFrameTimeObserver { frames.record($0) }
         defer { engine?.setSoftwareVideoFrameTimeObserver(nil) }
         let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
@@ -260,8 +264,12 @@ private final class ProbeFrames: @unchecked Sendable {
         }
         try await verifyFrames(after: 0)
         if checkAudio {
-            guard let tracks = MacPlaybackWindow.current?.tracks else {
-                throw LiveCheckError("fixture audio controls unavailable.")
+            let softwareTracks = MacSoftwarePlaybackWindow.current == nil ? nil
+                : PlaybackTracks(subtitles: nil, backend: backend)
+            defer { softwareTracks?.stop() }
+            softwareTracks?.bind(player: nil)
+            guard let tracks = MacPlaybackWindow.current?.tracks ?? softwareTracks else {
+                throw LiveCheckError("Fixture audio controls unavailable.")
             }
             for _ in 0..<100 {
                 if tracks.audio.contains(where: { $0.supported && $0.id != tracks.selectedAudio }) { break }
@@ -272,10 +280,12 @@ private final class ProbeFrames: @unchecked Sendable {
             }
             tracks.selectAudio(alternate.id)
             for _ in 0..<100 {
-                if engine?.activeAudioTrackIndex == alternate.id { break }
+                if engine?.activeAudioTrackIndex == alternate.id, engine?.state == .playing { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
-            guard engine?.activeAudioTrackIndex == alternate.id else { throw LiveCheckError("Audio selection did not take effect.") }
+            guard engine?.activeAudioTrackIndex == alternate.id, engine?.state == .playing else {
+                throw LiveCheckError("Audio selection did not resume playback.")
+            }
         }
         let targets = [min(60, media.info.duration / 2), 3.0]
         if MacSoftwarePlaybackWindow.current != nil, let engine {

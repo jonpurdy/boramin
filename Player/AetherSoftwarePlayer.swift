@@ -77,7 +77,7 @@ private let softwareLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, ca
     private func save() {
         guard restored, !stopped, !completed, !CommandLine.arguments.contains("--no-playback-history"),
               let key = media.positionKey else { return }
-        positions.save(engine.currentTime, duration: duration, for: key, subtitle: media.subtitleSelection)
+        positions.save(engine.currentTime, duration: duration, for: key, subtitle: media.subtitleSelection, audio: media.audioSelection)
     }
     func stop() {
         guard !stopped else { return }
@@ -410,14 +410,27 @@ struct AetherPlainSubtitles: View {
     let close: () -> Void
     let failure: (String) -> Void
     @ObservedObject private var engine: AetherEngine
+    @State private var lastUsesSoftware: Bool?
     init(media: PreparedMedia, backend: AetherMKVPlayback, close: @escaping () -> Void, failure: @escaping (String) -> Void) {
         self.media = media; self.backend = backend; self.close = close; self.failure = failure
         _engine = ObservedObject(wrappedValue: backend.engine)
     }
+    private var usesSoftware: Bool? {
+        guard engine.videoRoute != .none else { return lastUsesSoftware }
+        return engine.videoRoute == .software || engine.videoRoute == .audio
+    }
     var body: some View {
-        if engine.videoRoute == .software || engine.videoRoute == .audio {
+        Group {
+            playbackView
+        }
+        .onChange(of: usesSoftware, initial: true) { _, usesSoftware in
+            if let usesSoftware { lastUsesSoftware = usesSoftware }
+        }
+    }
+    @ViewBuilder private var playbackView: some View {
+        if usesSoftware == true {
             AetherSoftwarePresentation(media: media, backend: backend, close: close, failure: failure)
-        } else if engine.videoRoute == .none {
+        } else if usesSoftware == nil {
             Color.black
         } else {
             NativeAVPlayer(media: media) { message in

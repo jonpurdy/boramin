@@ -147,12 +147,14 @@ private let cloudLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, categ
         }
         let bookmarks = defaults.dictionary(forKey:"playbackPositions.v1") as? [String:[String:Double]] ?? [:]
         let resets = defaults.dictionary(forKey:"playbackResets.v1") as? [String:Double] ?? [:]
+        let audioTracks = defaults.dictionary(forKey: PlaybackPositions.audioStorageKey) as? [String: String] ?? [:]
         let subtitles = defaults.dictionary(forKey: PlaybackPositions.subtitleStorageKey) as? [String: String] ?? [:]
         for (key, value) in bookmarks {
             guard let seconds=value["seconds"], let duration=value["duration"], let updated=value["updated"],
                   seconds.isFinite, duration.isFinite, updated.isFinite, seconds>0, seconds<duration else { continue }
             if (resets[key] ?? 0) >= updated { continue }
             var fields = ["key":key,"seconds":String(seconds),"duration":String(duration)]
+            fields["audio"] = SavedTrackSelection.decode(audioTracks[key])?.encoded
             fields["subtitle"] = SavedSubtitleSelection.decode(subtitles[key])?.encoded
             result[id("position",key)] = Snapshot(kind:"position", fields: fields, state:"inProgress", updated:Date(timeIntervalSince1970:updated))
         }
@@ -221,7 +223,7 @@ private let cloudLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, categ
             for (key, old) in observed where current[key] == nil {
                 if old.kind == "position" && old.state == "reset" { continue }
                 var fields = old.fields
-                if old.kind == "position" { fields.removeValue(forKey: "subtitle") }
+                if old.kind == "position" { fields.removeValue(forKey: "subtitle"); fields.removeValue(forKey: "audio") }
                 let value = Value(id:key,kind:old.kind,fields:fields,state:old.kind == "position" ? "reset":"deleted",updated:Date(),operation:UUID().uuidString)
                 state.items[key] = Item(value:value,systemFields:state.items[key]?.systemFields)
                 state.pending.insert(key); urgent=true; changed=true
@@ -434,6 +436,7 @@ private let cloudLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, categ
             }
             if positions != previousPositions { defaults.set(positions,forKey:"playbackPositions.v1") }
             if resets != previousResets { defaults.set(resets,forKey:"playbackResets.v1") }
+            PlaybackPositions(defaults: defaults).applySyncedAudio(value.state == "inProgress" ? f["audio"] : nil, for: key)
             PlaybackPositions(defaults: defaults).applySyncedSubtitle(value.state == "inProgress" ? f["subtitle"] : nil, for: key)
         case "setting":
             // Registered UI defaults are not persisted cloud preferences.
@@ -471,7 +474,7 @@ private let cloudLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, categ
                     let key=deletion.recordID.recordName
                     if var item=state.items[key] {
                         item.value.state=item.value.kind == "position" ? "reset":"deleted"
-                        if item.value.kind == "position" { item.value.fields.removeValue(forKey: "subtitle") }
+                        if item.value.kind == "position" { item.value.fields.removeValue(forKey: "subtitle"); item.value.fields.removeValue(forKey: "audio") }
                         item.value.updated=Date(); item.value.operation=UUID().uuidString
                         try apply(item.value); state.items[key]=item
                     }

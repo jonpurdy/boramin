@@ -270,9 +270,9 @@ final class StreamingSession: @unchecked Sendable {
     }
     var sourceURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/source.\(ext)")! }
     var audioURL: URL { URL(string: "http://127.0.0.1:\(port)/\(token)/audio.caf")! }
-    @MainActor func configureAetherPlayback(forceBoraMinUI: Bool) async throws -> URL {
+    @MainActor func configureAetherPlayback(forceBoraMinUI: Bool = false, positionKey: String? = nil) async throws -> URL {
         #if canImport(AetherEngine)
-        let playback = try await AetherMKVPlayback.open(source: source, fileExtension: ext, forceBoraMinUI: forceBoraMinUI)
+        let playback = try await AetherMKVPlayback.open(source: source, fileExtension: ext, forceBoraMinUI: forceBoraMinUI, positionKey: positionKey)
         guard !source.cancellation.cancelled else { playback.stop(); throw CancellationError() }
         aetherPlayback = playback
         externalSubtitles?.bind(player: playback.player, backend: playback)
