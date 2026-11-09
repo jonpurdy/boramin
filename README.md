@@ -2,6 +2,9 @@
 
 Test Flight: [here](https://testflight.apple.com/join/9WQzbHVj)
 
+bo-ra! (보라!) == Look! (Korean)  
+Min = minimal
+
 A native SMB and HTTP(S) video player for Apple TV, iPhone, and Mac. Stream from a NAS or other remote server, save favorite folders, and resume unfinished videos across devices using iCloud.
 
 No metadata: this is not Plex or Infuse. It doesn't look up IMDB info or match files to shows. It shows full filenames and the actual contents of SMB/HTTP folders.
