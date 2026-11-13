@@ -69,9 +69,11 @@ final class HTTPFileService: @unchecked Sendable {
         }
         return entry
     }
-    func readRange(path: String, size: Int64, range: Range<Int64>) async throws -> Data {
+    func readRange(path: String, size: Int64, range: Range<Int64>,
+                   progress: @escaping @Sendable (Int64) -> Void) async throws -> Data {
         let request = Self.rangeRequest(url: try url(path: path), range: range)
-        return try await network.perform(request, policy: .range(range, size: size, etag: nil, modified: nil)).data
+        return try await network.perform(request, policy: .range(range, size: size, etag: nil, modified: nil),
+                                         progress: progress).data
     }
 
     private static func rangeRequest(url: URL, range: Range<Int64>) -> URLRequest {
@@ -156,11 +158,13 @@ private final class BoundedHTTPClient: NSObject, URLSessionDataDelegate, @unchec
     private final class Transfer {
         let policy: HTTPReadPolicy
         let completion: @Sendable (Result<HTTPResponse, Error>) -> Void
+        let progress: (@Sendable (Int64) -> Void)?
         var response: HTTPURLResponse?
         var data = Data()
         var error: Error?
-        init(policy: HTTPReadPolicy, completion: @escaping @Sendable (Result<HTTPResponse, Error>) -> Void) {
-            self.policy = policy; self.completion = completion
+        init(policy: HTTPReadPolicy, progress: (@Sendable (Int64) -> Void)?,
+             completion: @escaping @Sendable (Result<HTTPResponse, Error>) -> Void) {
+            self.policy = policy; self.progress = progress; self.completion = completion
         }
     }
     private let baseURL: URL
@@ -186,25 +190,28 @@ private final class BoundedHTTPClient: NSObject, URLSessionDataDelegate, @unchec
         (url.path == baseURL.path || url.path.hasPrefix(baseURL.path.hasSuffix("/") ? baseURL.path : baseURL.path + "/")) &&
         !url.path.components(separatedBy: "/").contains(where: { $0 == "." || $0 == ".." })
     }
-    func start(_ original: URLRequest, policy: HTTPReadPolicy, completion: @escaping @Sendable (Result<HTTPResponse, Error>) -> Void) -> URLSessionDataTask {
+    func start(_ original: URLRequest, policy: HTTPReadPolicy,
+               progress: (@Sendable (Int64) -> Void)? = nil,
+               completion: @escaping @Sendable (Result<HTTPResponse, Error>) -> Void) -> URLSessionDataTask {
         var request = original
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         if !username.isEmpty || !password.isEmpty {
             request.setValue("Basic " + Data((username + ":" + password).utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
         }
         let task = session.dataTask(with: request)
-        lock.lock(); transfers[task.taskIdentifier] = Transfer(policy: policy, completion: completion); lock.unlock()
+        lock.lock(); transfers[task.taskIdentifier] = Transfer(policy: policy, progress: progress, completion: completion); lock.unlock()
         task.resume()
         return task
     }
-    func perform(_ request: URLRequest, policy: HTTPReadPolicy, cancellation: CancellationFlag? = nil) async throws -> HTTPResponse {
+    func perform(_ request: URLRequest, policy: HTTPReadPolicy, cancellation: CancellationFlag? = nil,
+                 progress: (@Sendable (Int64) -> Void)? = nil) async throws -> HTTPResponse {
         let slot = HTTPTaskSlot()
         let handler = cancellation?.onCancel { slot.cancel() }
         defer { if let handler { cancellation?.removeHandler(handler) } }
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
-                slot.set(start(request, policy: policy) { continuation.resume(with: $0) })
+                slot.set(start(request, policy: policy, progress: progress) { continuation.resume(with: $0) })
             }
         } onCancel: { slot.cancel() }
     }
@@ -219,11 +226,12 @@ private final class BoundedHTTPClient: NSObject, URLSessionDataDelegate, @unchec
     }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         lock.lock(); defer { lock.unlock() }
-        guard let transfer = transfers[dataTask.taskIdentifier], transfer.error == nil else { return }
+        guard let transfer = transfers[dataTask.taskIdentifier], transfer.error == nil, transfer.response != nil else { return }
         guard data.count <= transfer.policy.maximumBytes - transfer.data.count else {
             transfer.error = PlayerError("The server exceeded the permitted response size."); dataTask.cancel(); return
         }
         transfer.data.append(data)
+        transfer.progress?(Int64(transfer.data.count))
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         lock.lock(); let transfer = transfers.removeValue(forKey: task.taskIdentifier); lock.unlock()

@@ -95,6 +95,18 @@ import AVKit
             try await expectFailure(mode) { _ = try await bad.readDirectory(path: "") }
             bad.close()
         }
+        let benchmark = RemoteSession(http: HTTPFileService(
+            baseURL: faults.appendingPathComponent("speed-test", isDirectory: true), username: "", password: ""))
+        var reportedBytes: Int64 = 0
+        let benchmarkStart = ContinuousClock.now
+        let sample = try await RemoteSpeedTest.run(session: benchmark, share: "", path: "movie.bin") { count, _, _ in
+            reportedBytes = count
+        }
+        try check(sample.bytes == 65536 && reportedBytes == sample.bytes, "Speed test lost bytes from an unfinished HTTP range")
+        try check(sample.seconds == 10 && benchmarkStart.duration(to: .now) < .seconds(13),
+                  "Speed test did not stop at its measurement deadline")
+        print("PASS: speed test reports partial HTTP range bytes at the deadline")
+
         let slow = HTTPFileService(baseURL: faults.appendingPathComponent("slow", isDirectory: true), username: "", password: "")
         let loading = Task { try await slow.readDirectory(path: "") }
         try await Task.sleep(for: .milliseconds(100))

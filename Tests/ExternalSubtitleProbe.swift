@@ -220,11 +220,15 @@ import AMSMB2
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let appearance = SubtitleAppearance(defaults: defaults)
-        try require(appearance.percent == 125, "Subtitle size default must be 125%")
+        try require(appearance.scaling.percent == 125, "Subtitle size default must be 125%")
+        try require(appearance.scaling.scaleAllText, "Scale all text must default to On")
+        appearance.setScaleAllText(false)
+        try require(!SubtitleAppearance(defaults: defaults).scaling.scaleAllText, "Scale all text did not persist")
+        appearance.setScaleAllText(true)
         appearance.select(150)
-        try require(SubtitleAppearance(defaults: defaults).percent == 150, "Subtitle size did not persist")
+        try require(SubtitleAppearance(defaults: defaults).scaling.percent == 150, "Subtitle size did not persist")
         appearance.select(999)
-        try require(appearance.percent == 150, "Invalid subtitle size accepted")
+        try require(appearance.scaling.percent == 150, "Invalid subtitle size accepted")
         appearance.select(100)
         let subtitles = ExternalSubtitles(tracks: tracks, appearance: appearance)
         let trackPanel = PlaybackTracks(subtitles: subtitles, backend: nil)
@@ -255,6 +259,22 @@ import AMSMB2
                     if g > 80 && g > r * 2 && g > b * 2 { green += 1 }
                 }
                 try require(red > 20 && green > 20, "External ASS colors were lost")
+                appearance.select(200)
+                try await wait("paused positioned ASS grows at 200%") {
+                    subtitles.frame.map { $0.imageRect.height > first.imageRect.height } ?? false
+                }
+                appearance.setScaleAllText(false)
+                try await wait("turning off Scale all text restores positioned ASS at 200%") {
+                    subtitles.frame.map { $0.imageRect == first.imageRect && pixels($0.image) == firstPixels } ?? false
+                }
+                appearance.setScaleAllText(true)
+                try await wait("turning on Scale all text enlarges positioned ASS again") {
+                    subtitles.frame.map { $0.imageRect.height > first.imageRect.height } ?? false
+                }
+                appearance.select(100)
+                try await wait("paused positioned ASS restores at 100%") {
+                    subtitles.frame.map { $0.imageRect == first.imageRect && pixels($0.image) == firstPixels } ?? false
+                }
             }
             _ = await player.seek(to: CMTime(seconds: 11, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
             subtitles.update(time: 11)

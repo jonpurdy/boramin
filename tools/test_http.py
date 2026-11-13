@@ -57,6 +57,7 @@ class Faults(BaseHTTPRequestHandler):
             if self.headers.get('Accept') != 'application/json': raise AssertionError('No JSON Accept header')
             if mode == 'html': data, mime = b'<html>not json</html>', 'text/html'
             elif mode == 'bad-json': data, mime = b'{bad}', 'application/json'
+            elif mode == 'speed-test': data, mime = b'[{"name":"movie.bin","size":1048576}]', 'application/json'
             elif mode == 'bad-name': data, mime = b'[{"name":"../outside","size":1,"is_dir":false}]', 'application/json'
             else: data, mime = b'[]', 'application/json'
             self.send_response(200); self.send_header('Content-Type', mime)
@@ -101,7 +102,14 @@ class Faults(BaseHTTPRequestHandler):
         self.send_header('Content-Length', count + (1 if mode == 'wrong-length' and not probe else 0))
         self.end_headers()
         data = b'x' * count
-        if mode == 'truncated' and not probe:
+        if mode == 'speed-test':
+            # Deliver a prefix, then leave the response open until the client cancels.
+            self.wfile.write(data[:65536]); self.wfile.flush()
+            self.connection.settimeout(20)
+            try: self.connection.recv(1)
+            except TimeoutError: pass
+            self.close_connection = True
+        elif mode == 'truncated' and not probe:
             self.wfile.write(data[:10]); self.close_connection = True
         else: self.wfile.write(data)
 

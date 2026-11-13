@@ -42,16 +42,16 @@ private let externalSubtitleLog = Logger(subsystem: BoraMinIdentity.bundleIdenti
     private var time = 0.0
     private var canvas = CGSize.zero
     private var scale: CGFloat = 1
-    private var fontScale = 1.25
+    private var scaling: SubtitleAppearance.Scaling
     private var stopped = false
     private var changingNativeSelection = false
     private var awaitingNativeOff = false
 
     init(tracks: [Track], appearance: SubtitleAppearance = .shared) {
         self.tracks = tracks
-        fontScale = appearance.fontScale
-        appearance.$percent.receive(on: DispatchQueue.main).sink { [weak self] value in
-            self?.fontScale = Double(value) / 100; self?.render()
+        scaling = appearance.scaling
+        appearance.$scaling.receive(on: DispatchQueue.main).sink { [weak self] value in
+            self?.scaling = value; self?.render()
         }.store(in: &appearanceSubscriptions)
     }
     private var appearanceSubscriptions = Set<AnyCancellable>()
@@ -269,13 +269,13 @@ private let externalSubtitleLog = Logger(subsystem: BoraMinIdentity.bundleIdenti
     func update(time: Double) { guard time.isFinite else { return }; self.time = time; render() }
     private func render() {
         guard !stopped, externalSelected, let rasterizer, let document else { return }
-        let version = generation, requestedTime = time, requestedCanvas = canvas, requestedScale = scale, requestedFontScale = fontScale
-        rasterizer.render(cues: document.cues, revision: version, time: time, size: canvas, scale: scale, fontScale: fontScale) { [weak self] output in
+        let version = generation, requestedTime = time, requestedCanvas = canvas, requestedScale = scale, requestedScaling = scaling
+        rasterizer.render(cues: document.cues, revision: version, time: time, size: canvas, scale: scale, scaling: scaling) { [weak self] output in
             guard let self, !self.stopped, self.generation == version else { return }
             switch output { case .unchanged: break; case .clear: self.frame = nil; case .frame(let frame): self.frame = frame }
             // Coalesce a seek/resize that arrived while the shared worker was
             // busy. A paused player need not send another clock tick afterwards.
-            if self.time != requestedTime || self.canvas != requestedCanvas || self.scale != requestedScale || self.fontScale != requestedFontScale {
+            if self.time != requestedTime || self.canvas != requestedCanvas || self.scale != requestedScale || self.scaling != requestedScaling {
                 Task { @MainActor [weak self] in self?.render() }
             }
         }

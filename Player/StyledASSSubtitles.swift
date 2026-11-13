@@ -27,7 +27,7 @@ final class ASSRasterizer: @unchecked Sendable {
     private var lastReset = -1.0
     private var lastSize = CGSize.zero
     private var lastCueRevision = UInt64.max
-    private var lastFontScale = 0.0
+    private var lastScaling: SubtitleAppearance.Scaling?
     private let pipeline = BlendImagePipeline()
     enum Output { case unchanged, clear, frame(ProcessedImage) }
 
@@ -59,7 +59,7 @@ final class ASSRasterizer: @unchecked Sendable {
             ass_set_check_readorder(track, 0)
         }
     }
-    func render(cues: [SubtitleCue], revision: UInt64, time: Double, size: CGSize, scale: CGFloat, fontScale: Double = 1,
+    func render(cues: [SubtitleCue], revision: UInt64, time: Double, size: CGSize, scale: CGFloat, scaling: SubtitleAppearance.Scaling,
                 completion: @escaping @MainActor (Output) -> Void) {
         guard time.isFinite, time >= 0, size.width > 0, size.height > 0 else { return }
         gate.lock()
@@ -70,9 +70,15 @@ final class ASSRasterizer: @unchecked Sendable {
             if !stopped, let renderer, let track {
                 let renderScale = min(scale, 8192 / max(size.width, size.height))
                 let canvas = CGSize(width: max(1, (size.width * renderScale).rounded()), height: max(1, (size.height * renderScale).rounded()))
-                let factor = fontScale.isFinite ? min(2, max(1, fontScale)) : 1
-                let fontChanged = factor != lastFontScale
-                if fontChanged { ass_set_font_scale(renderer, factor); lastFontScale = factor }
+                let scalingChanged = scaling != lastScaling
+                if scalingChanged {
+                    if scaling.scaleAllText != lastScaling?.scaleAllText {
+                        let mode = scaling.scaleAllText ? ASS_OVERRIDE_DEFAULT : ASS_OVERRIDE_BIT_SELECTIVE_FONT_SCALE
+                        ass_set_selective_style_override_enabled(renderer, Int32(mode.rawValue))
+                    }
+                    ass_set_font_scale(renderer, scaling.factor)
+                    lastScaling = scaling
+                }
                 let resized = canvas != lastSize
                 if resized { ass_set_frame_size(renderer, Int32(canvas.width), Int32(canvas.height)); lastSize = canvas }
                 // Keep event storage bounded, and rebuild from the engine's current cue window on seeks.
@@ -99,7 +105,7 @@ final class ASSRasterizer: @unchecked Sendable {
                 }
                 var changed: Int32 = 0
                 let first = ass_render_frame(renderer, track, Int64(time * 1000), &changed)
-                if changed != 0 || resized || fontChanged || added || reset {
+                if changed != 0 || resized || scalingChanged || added || reset {
                     if let first {
                         let images = linkedImages(from: first.pointee).filter { $0.w > 0 && $0.h > 0 }
                         let rect = imagesBoundingRect(images: images)
@@ -147,15 +153,15 @@ final class ASSRasterizer: @unchecked Sendable {
     private var scale: CGFloat = 1
     private var generation = 0
     private var cueRevision: UInt64 = 0
-    private var fontScale = 1.25
+    private var scaling: SubtitleAppearance.Scaling
     private var stopped = false
     private var setupTask: Task<Void, Never>?
     private var setupCancellation = CancellationFlag()
     init(engine: AetherEngine, appearance: SubtitleAppearance = .shared) {
         self.engine = engine
-        fontScale = appearance.fontScale
-        appearance.$percent.receive(on: DispatchQueue.main).sink { [weak self] value in
-            self?.fontScale = Double(value) / 100; self?.render()
+        scaling = appearance.scaling
+        appearance.$scaling.receive(on: DispatchQueue.main).sink { [weak self] value in
+            self?.scaling = value; self?.render()
         }.store(in: &subscriptions)
         engine.$activeSubtitleTrackIndex.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.updateSelection() }.store(in: &subscriptions)
         engine.$subtitleTracks.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.updateSelection() }.store(in: &subscriptions)
@@ -204,15 +210,15 @@ final class ASSRasterizer: @unchecked Sendable {
     }
     private func render() {
         guard !stopped, let rasterizer else { return }
-        let currentGeneration = generation, requestedTime = engine.sourceTime, requestedCanvas = canvas, requestedScale = scale, requestedFontScale = fontScale
-        rasterizer.render(cues: engine.subtitleCues, revision: cueRevision, time: engine.sourceTime, size: canvas, scale: scale, fontScale: fontScale) { [weak self] result in
+        let currentGeneration = generation, requestedTime = engine.sourceTime, requestedCanvas = canvas, requestedScale = scale, requestedScaling = scaling
+        rasterizer.render(cues: engine.subtitleCues, revision: cueRevision, time: engine.sourceTime, size: canvas, scale: scale, scaling: scaling) { [weak self] result in
             guard let self, !self.stopped, self.generation == currentGeneration else { return }
             switch result {
             case .unchanged: break
             case .clear: self.frame = nil
             case .frame(let frame): self.frame = frame
             }
-            if self.engine.sourceTime != requestedTime || self.canvas != requestedCanvas || self.scale != requestedScale || self.fontScale != requestedFontScale {
+            if self.engine.sourceTime != requestedTime || self.canvas != requestedCanvas || self.scale != requestedScale || self.scaling != requestedScaling {
                 Task { @MainActor [weak self] in self?.render() }
             }
         }

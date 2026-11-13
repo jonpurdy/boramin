@@ -10,6 +10,11 @@ struct MacSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Toggle("Sync via iCloud", isOn: Binding(get: { cloud.enabled }, set: { cloud.setEnabled($0) }))
+                Text(cloud.statusAndLastSync).font(.body).foregroundStyle(.secondary)
+                Button("Sync Now") { Task { await cloud.synchronize() } }.disabled(!cloud.enabled || cloud.syncing)
+            }
+            Section {
                 Toggle("Display all files", isOn: $allFiles)
                 Toggle("Use AVPlayer when possible (Experimental)", isOn: Binding(
                     get: { !alwaysUseAether }, set: { alwaysUseAether = !$0 }
@@ -17,16 +22,14 @@ struct MacSettingsView: View {
             }
             Section {
                 SubtitleSizeSetting()
-                Text("For external and ASS/SSA subtitles. Native captions use system settings. Saved on this device.").font(.body).foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Show Debug Info", isOn: $debug)
             }
             Section {
-                Toggle("Sync via iCloud", isOn: Binding(get: { cloud.enabled }, set: { cloud.setEnabled($0) }))
-                Text(cloud.statusAndLastSync).font(.body).foregroundStyle(.secondary)
-                Button("Sync Now") { Task { await cloud.synchronize() } }.disabled(!cloud.enabled || cloud.syncing)
-            }
-            Section {
                 Button("Licences") { showingLicences = true }
+            } footer: {
+                SettingsVersionFooter()
             }
         }
         .font(.body)

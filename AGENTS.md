@@ -19,7 +19,7 @@
 
 - HTTP browsing uses JSON directory listings from Caddy or nginx. Keep HTTP read-only, validate bounded `206 Partial Content` responses, and reject redirects that leave the configured origin or base path. Never fall back to a whole-file GET.
 - Keep **Speed test…** in file context menus. Use a separate cancellable session that bypasses the playback cache and stops at EOF, 2048 MiB, or about ten seconds of reading. Keep SMB deletion preflight checks and preserve subtitle sidecars that match another video.
-- Keep hardware VP9 on its VideoToolbox route and preserve native AVKit controls where supported. File-row route labels are predictions. See [AetherEngine playback](docs/AetherEngine-playback.md) for fallback behavior and [subtitle support](docs/External-subtitles.md) for track matching and rendering.
+- Keep hardware VP9 on its VideoToolbox route and preserve native AVKit controls where supported. File-row route labels are predictions. See [AetherEngine playback](docs/AetherEngine-playback.md) for fallback behavior and [subtitle support](docs/subtitles.md) for track matching and rendering.
 - Keep saved connection IDs stable. Scope Keychain credentials by connection ID and preserve Watching and Favorites references across connection edits and sync. Unchanged checkpoints should leave Watching order intact. See [iCloud sync](docs/iCloud-sync.md).
 
 ## Validation and delivery

@@ -400,8 +400,6 @@ struct BrowserScreen: View {
                 Text("Subtitle Size")
                 #endif
                 SubtitleSizeSetting()
-            } footer: {
-                Text("For external and ASS/SSA subtitles. Native captions use system settings. Saved on this device.").font(.body).foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Show Debug Info", isOn: $showDebugInfo)
@@ -409,6 +407,8 @@ struct BrowserScreen: View {
             }
             Section {
                 NavigationLink("Licences") { LicencesView() }
+            } footer: {
+                SettingsVersionFooter()
             }
         }
         .font(listPrimaryFont ?? .body)

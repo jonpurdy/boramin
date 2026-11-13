@@ -1,10 +1,12 @@
-# External subtitles
+# Subtitles
+
+## External track matching
 
 SMB and HTTP(S) playback discover `.srt`, `.vtt`, `.ass`, and `.ssa` files in the video's folder with the **exact video base filename**, optionally followed by a dot and a recognized language tag. Extensions and language tags are case-insensitive; the video base filename remains case-sensitive. For example, `Movie.mp4` matches `Movie.srt`, `Movie.ASS`, `Movie.en.srt`, `Movie.eng.srt`, `Movie.en-US.srt` and `Movie.zh-Hans-CN.srt`, but not `Another Movie.srt` or `Movie.commentary.srt`. Matching is independent of the browser's Display all files setting.
 
 Tags use Foundation's known two-/three-letter language codes, optionally followed by a recognized four-letter script and/or two-letter or three-digit region, separated by hyphens. Unknown codes, malformed tags, underscore separators and qualifiers such as `.en.forced` / `.en.sdh` are not matched. SMB deletion uses the same matcher and preserves any subtitle also associated with another supported video, including overlapping names such as `Movie.en.mkv` sharing `Movie.en.srt` with `Movie.mkv`.
 
-Matching tracks appear as **SRT — External**, **VTT — External**, etc.; language-tagged tracks include a localized language label, such as **English — SRT — External** or **Portuguese (Brazil) — SRT — External**. in **Subtitles**, alongside embedded subtitle options and Off. Discovery does not automatically enable subtitles. Selecting an external track loads only that subtitle file; the video is still streamed through its original playback route. The source files are unchanged.
+Matching tracks appear as **SRT — External**, **VTT — External**, etc.; language-tagged tracks include a localized language label, such as **English — SRT — External** or **Portuguese (Brazil) — SRT — External** in **Subtitles**, alongside embedded subtitle options and Off. Discovery does not automatically enable subtitles. Selecting an external track loads only that subtitle file; the video is still streamed through its original playback route. The source files are unchanged.
 
 ## Rendering and selection
 
@@ -18,6 +20,30 @@ Matching tracks appear as **SRT — External**, **VTT — External**, etc.; lang
 - Embedded PGS bitmap tracks use the existing image-caption overlay even when AetherEngine supplies a native AVPlayer and the MKV has no ASS track or matching sidecar. Native caption rendering is disabled for the selected bitmap track so it does not depend on a text rendition/OCR. Native plain-text selection is retained, and overlay visibility follows track switches and Off.
 - Subtitle rendering follows the native AVPlayer timeline or AetherEngine's source clock, including seeking and saved-position resume. Native AVPlayer callbacks run at up to 30 Hz; libass only publishes changed images.
 
+### Embedded ASS/SSA
+
+MKV uses AetherEngine automatically except VP9. VP9 MKV now uses BoraMin's original hardware decoder and native AVKit controls; it retains external subtitle support but does not expose AetherEngine's embedded subtitle/audio selections. Other MKVs use the engine's native AVPlayer where supported and its software fallback otherwise.
+
+The engine probes embedded tracks before loading. Only an MKV with at least one ASS/SSA track enables raw ASS markup and the libass coordinator. For these files the engine's plain native subtitle renditions are disabled to prevent duplicate/unformatted ASS captions.
+
+Selecting ASS/SSA activates libass; other source subtitle tracks use the existing plain-text/bitmap overlay. Selecting Off clears the overlay. Files without ASS retain their existing native subtitle preparation. Subtitles are initially off unless the engine selects a track; the presence of ASS does not force it on.
+
+AetherEngine supplies the original header, raw timed events, embedded font data and picture-aligned source clock. The app feeds events to libass's public `ass_process_codec_private` / `ass_process_chunk` APIs. It uses the existing SwiftAssRenderer bitmap blending pipeline to draw libass output in the video rectangle through public SwiftUI/AVKit overlay APIs. No video burn-in or re-encoding occurs. No internal AVKit views are inspected.
+
+BoraMin manages libass tracks directly on one serial worker queue, incrementally appending and deduplicating events. This avoids script reload flashes and explicitly frees track, renderer and library pointers.
+
+- Full ASS/SSA markup is preserved, including position, colors, transformations and animation.
+- MKV font attachments are passed directly to `ass_add_font`, before initializing CoreText font selection; no global font registration or extraction into user folders is needed. Missing fonts can still fall back.
+- Font setup runs off the main actor and is cancelled when switching tracks or closing.
+- Rendering follows AetherEngine's source clock, including pause/resume and seek landing.
+- At most one bitmap render/publication is in flight. Events are processed only when the cue window changes or needs rebuilding.
+- Event storage is periodically flushed/rebuilt from the engine's current subtitle window; seeks also rebuild it. Libass bitmap cache is limited to 32 MiB. This is additional to the existing compressed SMB cache and other player memory.
+- Render callbacks are scoped to the selected track generation so a closed/switched track cannot redraw stale subtitles.
+
+### Renderer dependencies
+
+SwiftAssRenderer 1.3.1 / SwiftLibass 1.4.0 are pinned through SwiftPM. The binaries report libass 0.17.3, FriBidi 1.0.14 and HarfBuzz 8.5.0. Other component versions/notices are recorded under `vendor/Subtitle-notices` and `vendor/DEPENDENCIES.md`. No AetherEngine dependency patches were needed.
+
 ## Bounds and lifecycle
 
 Sidecars are limited to 8 MiB each, 50,000 decoded cues, 64 KiB per cue, and 16 MiB of decoded event text. Only the selected document is retained. Downloads use a bounded byte range and reject a file that changes size during loading. FFmpeg uses a forced text demuxer and file-only protocol on a private temporary file, removed immediately after decoding. No movie is downloaded or remuxed.
@@ -26,7 +52,7 @@ Loading/decoding/font setup is cancelled on a new selection or playback stop. Ge
 
 Discovery errors do not block video playback. A selected track's load/decode error is logged with Apple's logger and shown over the video; other tracks, Off, and video playback remain available.
 
-These overlays do not accompany video into Picture in Picture, AirPlay or external playback. Subtitle selection is remembered and synced only alongside an unfinished playback position, as described below. Language suffix matching, subtitle offsets, external bitmap subtitles and subtitle search/download are not included.
+These overlays do not accompany video into Picture in Picture, AirPlay or external playback. Subtitle selection is remembered and synced only alongside an unfinished playback position, as described below. Subtitle offsets, external bitmap subtitles and subtitle search/download are not included.
 
 ## Remembering subtitle selection
 
@@ -42,7 +68,15 @@ October 26 validation: isolated bookmark tests passed identity persistence, Off,
 
 **Settings** includes **Subtitle Size** for external text subtitles and embedded ASS/SSA: 100%, 125%, 150%, and 200%. The initial value is 125%; 100% restores the authored font scale. The choice is saved in local preferences per device and is not included in iCloud sync.
 
-The shared libass renderer uses its public `ass_set_font_scale` API, applied on the same serial worker as rendering. Changes redraw the current subtitle even while playback is paused, without reopening the track or changing the video/audio pipeline. Both external subtitles and embedded ASS/SSA observe the preference. Fonts, colors, event timing and animation remain script-driven, but larger text can alter line wrapping or overlap authored layouts. Native AVKit captions and bitmap subtitles retain their existing appearance behavior.
+The shared libass renderer applies the size multiplier with `ass_set_font_scale()` on its serial rendering queue. Changes redraw the current subtitle even while playback is paused. Native AVKit captions and bitmap subtitles retain their existing appearance behavior.
+
+### Positioned ASS text and drawings
+
+libass enables `ASS_OVERRIDE_BIT_SELECTIVE_FONT_SCALE` by default. It uses tags such as `\pos`, `\move`, and `\p` to identify events that its dialogue-only scaling heuristic skips. This caused some ASS captions to stay at their authored size even at 200%.
+
+**Subtitles: scale all text** is on by default. It clears that flag so the size multiplier also applies to positioned text and vector drawings. Turning it off restores libass’s selective scaling. Fonts, colors, timing, and animation remain script-driven. Larger subtitles can wrap differently, overlap authored elements, or be cropped by script clips or the video edges.
+
+The [local regression probe](#local-regression-probe) checks that positioned ASS grows at 200% while paused, that toggling the setting at 200% updates the current frame, and that returning to 100% restores the original bounds and pixels. The main test suite checks bitmap output for the live ASS fixture.
 
 ## Local regression probe
 
@@ -62,6 +96,12 @@ The default probe uses generated local fixtures, not real server credentials or 
 Passed on macOS on October 25, 2026. The iOS, tvOS and macOS app builds and private FFmpeg linkage checks also passed. The initial unified panel build was installed on Apple TV and Mac; the subsequent subtitle feature build was also deployed to test device. GUI validation is being handled by the user.
 
 The actual external ASS fixture MP4/ASS pair also passed SMB discovery, bounded download, libass bitmap rendering, production playback preparation, and installation of the Mac subtitle overlay/menu host. The earlier GUI report was resolved by using the app's top-right subtitle control rather than AVKit's embedded-track menu. The subsequent unified panel replaces that standalone picker.
+
+### Embedded ASS regression probe
+
+`tools/create_ass_fixture.py` generates a local H.264/AAC MKV with colored/positioned/animated ASS, an SRT track and an attached test font. The system font is used only for this generated local fixture; it is not bundled in BoraMin.
+
+`Tests/StyledASSPlaybackProbe.swift` builds in the isolated Mac probe target using `python3 tools/run_playback_probe.py --generate-only ass`. It verifies actual native decoded video pixels, a non-empty libass bitmap, red/green text, authored position, changing animation frames, forward/backward seeks, pause, ASS/SRT/Off switching, font delivery and teardown. The original AVPlayer is retained throughout. Generated logs and the rendered bitmap stay under ignored `build/` paths.
 
 ## tvOS menu visibility correction
 

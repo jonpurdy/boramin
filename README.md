@@ -23,7 +23,7 @@ Hardware VP9 playback: for those of us with older Apple TVs (like 4K 2nd Gen (20
 - **Watching:** resume watching videos you didn't have time to finish.
 - **Folder sorting (tvOS):** choose **List View sort by…** in Settings to sort folder contents by filename or date. Date uses SMB creation time when available and modification time otherwise. Items without a date appear last. This setting is saved on Apple TV.
 - **OLED mode (tvOS):** automatically dim screen when inactive for 10 seconds. Dimmable by 25%, 50%, 75%. Undims automatically on user action.
-- **Speed test:** on any file, test download speed to ensure your connection is working well.
+- **Speed test:** on any file, measure the bytes received in about ten seconds, including data from a read still in progress when time runs out.
 
 ## Playback Engines
 
@@ -52,7 +52,7 @@ See the [licences](Licences/README.md) and [dependency distribution requirements
 
 - [Agent guidance and project boundaries](AGENTS.md)
 - [Playback logs and crash reports](docs/Diagnostics.md)
-- [Subtitle regression fixtures and checks](docs/External-subtitles.md#local-regression-probe)
+- [Subtitle regression fixtures and checks](docs/subtitles.md#local-regression-probe)
 - [Device probes and investigations](Tests/README.md)
 
 Connection and browsing errors translate SMB/POSIX codes, HTTP statuses, and URLSession network codes into guidance, with numeric codes retained for diagnostics. Missing locations and access failures do not imply a specific server-side cause. Failed navigation keeps the previous directory visible.

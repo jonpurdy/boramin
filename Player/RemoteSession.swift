@@ -49,9 +49,10 @@ final class RemoteSession: @unchecked Sendable {
         guard let smb else { throw PlayerError("HTTP connections are read-only.") }
         return try await SMBBrowsingService.removeFileWithSubtitles(smb, entry: entry)
     }
-    fileprivate func readRange(path: String, size: Int64, range: Range<Int64>) async throws -> Data {
-        if let smb { return try await SMBBrowsingService.readRange(smb, path: path, range: range) }
-        return try await http!.readRange(path: path, size: size, range: range)
+    fileprivate func readRange(path: String, size: Int64, range: Range<Int64>,
+                               progress: @escaping @Sendable (Int64) -> Void) async throws -> Data {
+        if let smb { return try await SMBBrowsingService.readRange(smb, path: path, range: range, progress: progress) }
+        return try await http!.readRange(path: path, size: size, range: range, progress: progress)
     }
 
     func openFile(path: String, size: Int64, cancellation: CancellationFlag) async throws -> CachedRemoteFile {
@@ -108,27 +109,41 @@ enum RemoteSpeedTest {
         let start = clock.now
         let deadline = start + .seconds(10)
 
+        let received = ByteCounter()
         await progress(0, 0, deadline)
         return try await withThrowingTaskGroup(of: Sample?.self) { group in
             group.addTask {
-                try await clock.sleep(until: deadline)
+                while clock.now < deadline {
+                    try await clock.sleep(until: min(deadline, clock.now + .milliseconds(250)))
+                    guard clock.now < deadline else { break }
+                    let bytes = received.bytes
+                    await progress(bytes, Double(bytes) / Double(limit), deadline)
+                }
                 return nil
             }
             group.addTask {
-                var bytes: Int64 = 0
+                let maxRangeSize: Int64 = 2 * 1024 * 1024
+                // An SMB read may deliver an entire range in one callback. Start small and
+                // only grow after a quick read, so slow links can deliver a usable sample.
+                var rangeSize: Int64 = session.supportsShares ? 16 * 1024 : maxRangeSize
+                var offset: Int64 = 0
                 do {
-                    while bytes < limit, clock.now < deadline {
-                        let range = bytes..<min(limit, bytes + 2 * 1024 * 1024)
-                        let chunk = try await session.readRange(path: path, size: file.size, range: range)
-                        bytes += Int64(chunk.count)
-                        await progress(bytes, Double(bytes) / Double(limit), deadline)
+                    while offset < limit, clock.now < deadline {
+                        let range = offset..<min(limit, offset + rangeSize)
+                        let readStart = clock.now
+                        let chunk = try await session.readRange(path: path, size: file.size, range: range) { count in
+                            received.record(range.lowerBound + count, before: deadline)
+                        }
+                        offset += Int64(chunk.count)
                         if chunk.count < range.count { break }
+                        if readStart.duration(to: clock.now) < .milliseconds(500) {
+                            rangeSize = min(maxRangeSize, rangeSize * 2)
+                        }
                     }
-                } catch {
-                    // A deadline can interrupt an in-flight read. Only completed chunks count.
-                    if !Task.isCancelled { throw error }
+                } catch is CancellationError where Task.isCancelled {
+                    // Keep the bytes that arrived before the timer cancelled the read.
                 }
-                return Sample(bytes: bytes, elapsed: start.duration(to: clock.now))
+                return Sample(bytes: received.bytes, elapsed: start.duration(to: min(clock.now, deadline)))
             }
             defer { group.cancelAll() }
             let first = try await group.next()
@@ -144,6 +159,19 @@ enum RemoteSpeedTest {
                 throw PlayerError("No file data arrived during the speed test.")
             }
             return sample
+        }
+    }
+
+    private final class ByteCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count: Int64 = 0
+
+        var bytes: Int64 { lock.withLock { count } }
+
+        func record(_ bytes: Int64, before deadline: ContinuousClock.Instant) {
+            lock.withLock {
+                if ContinuousClock().now < deadline { count = bytes }
+            }
         }
     }
 }

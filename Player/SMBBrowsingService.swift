@@ -140,14 +140,18 @@ import AMSMB2
         return result
     }
 
-    nonisolated static func readRange(_ manager: SMB2Manager, path: String, range: Range<Int64>) async throws -> Data {
+    nonisolated static func readRange(_ manager: SMB2Manager, path: String, range: Range<Int64>,
+                                     progress: @escaping @Sendable (Int64) -> Void) async throws -> Data {
         let cancellation = CancellationFlag()
         return try await CancellableOperation.run(interrupt: {
             cancellation.cancel()
             abort(manager)
         }) { completion in
-            manager.contents(atPath: path, range: range, progress: { _, _ in !cancellation.cancelled },
-                             completionHandler: completion)
+            manager.contents(atPath: path, range: range, progress: { count, _ in
+                guard !cancellation.cancelled else { return false }
+                progress(count)
+                return true
+            }, completionHandler: completion)
         }
     }
 
