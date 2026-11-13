@@ -21,6 +21,7 @@ Hardware VP9 playback: for those of us with older Apple TVs (like 4K 2nd Gen (20
 - **Favorites:** save folder/share paths. Favorite selected folders for quick access.
 - **iCloud sync:** synchronize saved connections, credentials, favorites, and playback positions of watching videos.
 - **Watching:** resume watching videos you didn't have time to finish.
+- **Folder sorting (tvOS):** choose **List View sort by…** in Settings to sort folder contents by filename or date. Date uses SMB creation time when available and modification time otherwise. Items without a date appear last. This setting is saved on Apple TV.
 - **OLED mode (tvOS):** automatically dim screen when inactive for 10 seconds. Dimmable by 25%, 50%, 75%. Undims automatically on user action.
 - **Speed test:** on any file, test download speed to ensure your connection is working well.
 

@@ -38,6 +38,7 @@ struct BrowserScreen: View {
     @AppStorage("displayAllFiles") private var displayAllFiles = false
     @AppStorage("showDebugInfo") private var showDebugInfo = false
     #if os(tvOS)
+    @AppStorage(FolderSortOrder.key) private var folderSortOrder = FolderSortOrder.filenameAscending
     @AppStorage("expandFilenameImmediately") private var expandFilenameImmediately = false
     @AppStorage("oledMode") private var oledMode = false
     @AppStorage(OLEDDimming.key) private var oledDimming = OLEDDimming.defaultValue
@@ -56,7 +57,12 @@ struct BrowserScreen: View {
         }
     }
     private var visibleEntries: [BrowserEntry] {
-        browser.entries.filter { displayAllFiles || $0.directory || $0.playable }
+        let entries = browser.entries.filter { displayAllFiles || $0.directory || $0.playable }
+        #if os(tvOS)
+        return entries.sorted(by: folderSortOrder.precedes)
+        #else
+        return entries
+        #endif
     }
     private var firstFocusableEntry: String? {
         visibleEntries.first { $0.directory || $0.playable }?.id
@@ -352,6 +358,13 @@ struct BrowserScreen: View {
             }
             Section {
                 Toggle("Display all files", isOn: $displayAllFiles)
+                #if os(tvOS)
+                Picker("List View sort by…", selection: $folderSortOrder) {
+                    ForEach(FolderSortOrder.allCases, id: \.self) { order in
+                        Text(order == folderSortOrder ? "✓ \(order.rawValue)" : order.rawValue).tag(order)
+                    }
+                }
+                #endif
                 Toggle("Use AVPlayer when possible (Experimental)", isOn: Binding(
                     get: { !alwaysUseAether }, set: { alwaysUseAether = !$0 }
                 ))

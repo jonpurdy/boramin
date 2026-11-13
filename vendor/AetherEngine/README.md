@@ -11,7 +11,7 @@ Local compiler compatibility changes for Xcode 26.3 / Swift 6.2:
 - StereoVideoSignal.viewPackingBox explicitly converts its bitwise flag expression to UInt8.
 - AetherEngine.loadSession's forcesSoftware closure explicitly retains MainActor isolation, matching the engine and VTCapabilityProbe it calls.
 
-Local playback correction: SoftwarePlaybackHost parks excess VOD audio as compressed packets instead of stopping all demuxing at the decoded-audio target. The queue is limited to 4 MiB / 2,048 packets (plus one indivisible packet), drains at the existing audio lead target, and is cleared on seek or teardown. EOF waits for queued audio. Live playback retains upstream scheduling. This corrects the reproducible K-Pop startup stall; keep this patch separate from future upstream updates.
+Local playback correction: SoftwarePlaybackHost parks excess VOD audio as compressed packets instead of stopping all demuxing at the decoded-audio target. The queue is limited to 4 MiB / 2,048 packets (plus one indivisible packet), drains at the existing audio lead target, and is cleared on seek or teardown. Queued audio can drain while the video packet queue is full, and new audio packets join the back of the queue even if the clock crosses the audio lead threshold during a demux read. EOF waits for queued audio. Live playback retains upstream scheduling. The patch addresses the reproducible K-Pop startup stall and the packet reordering reproduced with an AVI/MP3 episode.
 
 BoraMin's adapter is Player/AetherMKVPlayback.swift. Existing C/FFmpeg code is linked inside BoraMinMedia.framework, exporting only media_*; this prevents its static FFmpeg symbols from overriding the engine's dynamic frameworks.
 

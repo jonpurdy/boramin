@@ -56,6 +56,9 @@ import AMSMB2
                 directory: attributes[.fileResourceTypeKey] as? URLFileResourceType == .directory,
                 size: (attributes[.fileSizeKey] as? NSNumber)?.int64Value ?? 0)
             entry.modified = (attributes[.contentModificationDateKey] as? Date)?.timeIntervalSince1970 ?? 0
+            if let created = attributes[.creationDateKey] as? Date, created.timeIntervalSince1970 != 0 {
+                entry.created = created
+            }
             return entry
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }

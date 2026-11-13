@@ -64,6 +64,10 @@ struct BrowserEntry: Identifiable {
     let directory: Bool
     let size: Int64
     var modified: Double = 0
+    var created: Date? = nil
+    var sortDate: Date? {
+        created ?? (modified.isFinite && modified != 0 ? Date(timeIntervalSince1970: modified) : nil)
+    }
     var duration: Double? = nil
     var progress: PlaybackProgress? = nil
     var playbackRoute: PlaybackRoute? = nil
@@ -85,3 +89,27 @@ struct BrowserEntry: Identifiable {
     var playable: Bool { ["mp4", "m4v", "mov", "mkv", "webm", "avi", "ts", "m2ts", "mts", "mpg", "mpeg", "vob", "wmv", "asf", "flv", "ogv", "ogg", "rm", "rmvb", "3gp", "3g2"].contains((name as NSString).pathExtension.lowercased()) }
 }
 
+
+enum FolderSortOrder: String, CaseIterable {
+    static let key = "folderSortOrder"
+
+    case filenameAscending = "Filename A-Z"
+    case filenameDescending = "Filename Z-A"
+    case dateAscending = "Date (oldest)"
+    case dateDescending = "Date (newest)"
+
+    func precedes(_ lhs: BrowserEntry, _ rhs: BrowserEntry) -> Bool {
+        if self == .dateAscending || self == .dateDescending {
+            switch (lhs.sortDate, rhs.sortDate) {
+            case let (left?, right?) where left != right:
+                return self == .dateAscending ? left < right : left > right
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: break
+            }
+        }
+        let nameOrder = lhs.name.localizedStandardCompare(rhs.name)
+        if nameOrder == .orderedSame { return lhs.path < rhs.path }
+        return nameOrder == (self == .filenameDescending ? .orderedDescending : .orderedAscending)
+    }
+}

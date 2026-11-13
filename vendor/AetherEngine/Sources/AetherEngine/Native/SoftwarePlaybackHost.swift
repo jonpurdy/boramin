@@ -3952,12 +3952,17 @@ final class SoftwarePlaybackHost {
                 clockArmed: clockArmed(), lastAudioPts: lastEnqueuedAudioPtsSec,
                 clockSeconds: audioOutput?.currentTimeSeconds ?? .nan)
         }
+        func canDrainParkedAudio() -> Bool {
+            !isLive && decoupleAudio && !parkedAudio.isEmpty && !audioAtTarget()
+        }
         func readGateClosed() -> Bool {
             if isLive {
                 return Self.shouldHoldDemuxRead(parkedCount: parkedVideo.count, parkedCap: parkedVideoCap,
                     clockArmed: clockArmed(), lastAudioPts: lastEnqueuedAudioPtsSec,
                     clockSeconds: audioOutput?.currentTimeSeconds ?? .nan)
             }
+            // Draining audio already in memory does not add to the parked video queue.
+            if canDrainParkedAudio() { return false }
             return parkedVideo.count >= parkedVideoCap || (audioAtTarget()
                 && (sourceEnded || backgroundAudioOnly()
                     || parkedAudioBytes >= 4 * 1024 * 1024 || parkedAudio.count >= 2048))
@@ -4272,9 +4277,10 @@ final class SoftwarePlaybackHost {
             // And the producer's own: a seek's flush that lands between the generation check below and
             // the feed would let a pre-seek packet re-anchor the APAC bridge for the whole post-seek run.
             let audioFeedEpochBeforeRead = audioDecoder?.feedEpoch ?? 0
+            let drainingParkedAudio = canDrainParkedAudio()
             let packet: UnsafeMutablePointer<AVPacket>?
             do {
-                if !isLive, decoupleAudio, !parkedAudio.isEmpty, !audioAtTarget() {
+                if drainingParkedAudio {
                     let queued = parkedAudio.removeFirst()
                     parkedAudioBytes -= audioPacketBytes(queued)
                     packet = queued
@@ -4359,7 +4365,10 @@ final class SoftwarePlaybackHost {
                 return !isLive
             }
 
-            if !isLive, decoupleAudio, packet.pointee.stream_index == audioStreamIndex, audioAtTarget() {
+            // The clock can cross the lead threshold during a demux read. Keep new packets
+            // behind older parked packets even when the renderer has room by the time read returns.
+            if !isLive, decoupleAudio, !drainingParkedAudio, packet.pointee.stream_index == audioStreamIndex,
+               !parkedAudio.isEmpty || audioAtTarget() {
                 parkedAudio.append(packet)
                 parkedAudioBytes += audioPacketBytes(packet)
                 return true
