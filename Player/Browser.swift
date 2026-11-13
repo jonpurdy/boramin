@@ -90,15 +90,17 @@ private let browserLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, cat
     var hasSavedConnection: Bool {
         !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    // Reconnect only for the selected browser, on explicit retry/foreground or an SMB operation.
-    func automaticallyConnect() async {
+    // Once an opening attempt fails, the Retry button starts the next attempt.
+    func automaticallyConnect(retry: Bool = false) async {
         guard !showingConnections, !connected, !busy, playing == nil else { return }
+        guard retry || connectionError == nil else { return }
         reloadSelectedConnection()
         guard hasSavedConnection else { connectionNeedsSetup = true; return }
         beginConnection(preservingLocation: true)
         await operation?.value
     }
     private func beginConnection(preservingLocation: Bool) {
+        connectionError = nil
         // The model owns this task. A SwiftUI screen task disappearing must not cancel a user's connection request.
         perform("Connecting…", invalidateConnectionOnFailure: false) { [self] in
             do {
@@ -110,13 +112,21 @@ private let browserLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, cat
             catch is CancellationError { throw CancellationError() }
             catch {
                 try Task.checkCancellation()
-                connectionError = RemoteErrorMessage.message(for: error)
+                let targetShare = preservingLocation && !share.isEmpty ? share : directShare
+                connectionError = connectionFailureMessage(error, share: targetShare)
                 connectionNeedsSetup = Self.needsConnectionSetup(error)
                 let failure = error as NSError
                 browserLog.error("Connection failed domain=\(failure.domain, privacy: .public) code=\(failure.code)")
-                throw error
+                Self.reportDiagnosticFailure(failure)
             }
         }
+    }
+    private func connectionFailureMessage(_ error: Error, share: String) -> String {
+        let message = RemoteErrorMessage.message(for: error)
+        guard let url = ConnectionPreferences.connectionURL(host) else { return message }
+        let address = "\n\nConnection URL: \(url.absoluteString)"
+        let shareDetails = url.scheme == "smb" && !share.isEmpty ? "\nShare: \(share)" : ""
+        return message + address + shareDetails
     }
     private static func needsConnectionSetup(_ error: Error) -> Bool {
         if error is PlayerError { return true }
@@ -242,7 +252,7 @@ private let browserLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, cat
             try Task.checkCancellation()
             if manager === session, Self.needsConnectionSetup(error) {
                 connected = false; connectionNeedsSetup = true
-                connectionError = RemoteErrorMessage.message(for: error)
+                connectionError = connectionFailureMessage(error, share: name)
             }
             throw error
         }
@@ -490,7 +500,7 @@ private let browserLog = Logger(subsystem: BoraMinIdentity.bundleIdentifier, cat
                                                EPIPE, ETIMEDOUT, ENETDOWN, ENETUNREACH, EHOSTDOWN, EHOSTUNREACH, ECONNREFUSED]
                 if invalidateConnectionOnFailure, failure.domain == NSPOSIXErrorDomain, transportCodes.contains(Int32(failure.code)) {
                     connected = false
-                    connectionError = RemoteErrorMessage.message(for: error)
+                    connectionError = connectionFailureMessage(error, share: share)
                 }
                 self.error = RemoteErrorMessage.message(for: error)
             }

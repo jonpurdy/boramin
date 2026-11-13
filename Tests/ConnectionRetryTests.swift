@@ -13,6 +13,19 @@ import Foundation
             try await ConnectionRetry.run(delay: .zero) { _ in attempts += 1; throw POSIXError(.EIO) }
             preconditionFailure("A permanent I/O failure must be surfaced")
         } catch { precondition(attempts == 2 && (error as NSError).code == Int(POSIXErrorCode.EIO.rawValue)) }
+        let networkFailures: [Error] = [POSIXError(.ECONNREFUSED), URLError(.cannotConnectToHost),
+                                        URLError(.timedOut), URLError(.networkConnectionLost)]
+        for failure in networkFailures {
+            attempts = 0
+            do {
+                try await ConnectionRetry.run(delay: .zero) { _ in attempts += 1; throw failure }
+                preconditionFailure("Expected the final connection error")
+            } catch {
+                precondition(attempts == 2 && (error as NSError) == (failure as NSError))
+            }
+        }
+        precondition(!ConnectionRetry.isTransient(URLError(.serverCertificateUntrusted)))
+        precondition(!ConnectionRetry.isTransient(URLError(.userAuthenticationRequired)))
         for code in [POSIXErrorCode.EACCES, .EPERM, .ENOENT, .EINVAL] {
             attempts = 0
             do {

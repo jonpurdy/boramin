@@ -56,3 +56,5 @@ See the [licences](Licences/README.md) and [dependency distribution requirements
 - [Device probes and investigations](Tests/README.md)
 
 Connection and browsing errors translate SMB/POSIX codes, HTTP statuses, and URLSession network codes into guidance, with numeric codes retained for diagnostics. Missing locations and access failures do not imply a specific server-side cause. Failed navigation keeps the previous directory visible.
+The connection error screen shows the validated connection URL and, when available, the SMB share. Default ports are implicit.
+Connection opening retries eligible network failures once before showing an error. After a failure, use Retry or reopen the saved connection to try again.

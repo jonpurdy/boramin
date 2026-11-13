@@ -259,7 +259,7 @@ struct BrowserScreen: View {
                 } description: {
                     Text(browser.connectionError ?? "Choose a saved connection or add one in Settings.")
                 } actions: {
-                    Button("Retry") { Task { await browser.automaticallyConnect() } }
+                    Button("Retry") { Task { await browser.automaticallyConnect(retry: true) } }
                     Button("Connections") { if navigation.last == .files { browser.showConnections() } else { navigation.append(.connections) } }
                     if let id = browser.connectionID, let saved = ConnectionPreferences.shared.connection(id: id) {
                         ConnectionEditButton(connection: saved)

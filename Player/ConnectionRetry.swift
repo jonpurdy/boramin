@@ -1,11 +1,14 @@
 import Foundation
 
-/// Retry only the read-only connection-opening operation, once, with a fresh SMB manager.
+/// Retry only the read-only connection-opening operation, once, with a fresh session.
 enum ConnectionRetry {
     static func isTransient(_ error: Error) -> Bool {
         let failure = error as NSError
+        if failure.domain == NSURLErrorDomain {
+            return [.cannotConnectToHost, .timedOut, .networkConnectionLost].contains(URLError.Code(rawValue: failure.code))
+        }
         guard failure.domain == NSPOSIXErrorDomain else { return false }
-        return [POSIXErrorCode.EIO, .ECONNRESET, .ECONNABORTED, .ENOTCONN, .EPIPE, .ETIMEDOUT]
+        return [POSIXErrorCode.EIO, .ECONNREFUSED, .ECONNRESET, .ECONNABORTED, .ENOTCONN, .EPIPE, .ETIMEDOUT]
             .contains { Int($0.rawValue) == failure.code }
     }
     @MainActor static func run(delay: Duration = .milliseconds(250), operation: (Int) async throws -> Void) async throws {

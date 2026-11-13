@@ -185,6 +185,7 @@ private struct MacFilesView: View {
             TableColumn("Kind") { row in Text(row.entry == nil ? "SMB Share" : row.kind).foregroundStyle(.secondary) }.width(100)
             TableColumn("Size") { row in Text(row.directory ? "—" : (row.entry?.playbackDetails(alwaysUseAether: alwaysUseAether) ?? ByteCountFormatter.string(fromByteCount: row.size, countStyle: .file))).foregroundStyle(.secondary).task(id: row.entry.map { browser.metadataTaskID($0) } ?? row.id) { if let entry = row.entry { await browser.loadMetadata(entry) } } }.width(270)
         }
+        .alternatingRowBackgrounds(browser.connectionError != nil && !browser.busy && !browser.connected ? .disabled : .automatic)
         .contextMenu(forSelectionType: String.self) { ids in
             if let row = rows.first(where: { ids.contains($0.id) }) {
                 Button(row.directory ? "Open" : "Play") { open(row) }.disabled(browser.busy || (!row.directory && row.entry?.playable != true))
@@ -226,7 +227,7 @@ private struct MacFilesView: View {
             if !browser.busy, !browser.connected {
                 ContentUnavailableView { Label("Connect to Your Media", systemImage: "externaldrive.connected.to.line.below") }
                     description: { Text(browser.connectionError ?? "Choose a saved connection to browse your videos.") }
-                    actions: { Button("Connections") { browser.showConnections() }; if let id = browser.connectionID, let saved = ConnectionPreferences.shared.connection(id: id) { ConnectionEditButton(connection: saved) }; if browser.hasSavedConnection { Button("Retry") { Task { await browser.automaticallyConnect() } } } }
+                    actions: { Button("Connections") { browser.showConnections() }; if let id = browser.connectionID, let saved = ConnectionPreferences.shared.connection(id: id) { ConnectionEditButton(connection: saved) }; if browser.hasSavedConnection { Button("Retry") { Task { await browser.automaticallyConnect(retry: true) } } } }
             } else if !browser.busy, rows.isEmpty { ContentUnavailableView.search(text: search) }
         }
         .task { await browser.automaticallyConnect() }
